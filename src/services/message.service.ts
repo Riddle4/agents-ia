@@ -72,10 +72,32 @@ export async function createInboundMessage(
   email: IncomingEmail,
   tx = prisma
 ) {
+  const source = email.source ?? 'EMAIL'
+  const externalId = email.externalId ?? null
+
+  if (externalId) {
+    const existingMessage = await tx.message.findUnique({
+      where: {
+        source_externalId: {
+          source,
+          externalId,
+        },
+      },
+    })
+
+    if (existingMessage) {
+      console.log('⚠️ Message déjà existant, ignoré')
+      console.log(`Source     : ${source}`)
+      console.log(`ExternalId : ${externalId}`)
+
+      return existingMessage
+    }
+  }
+
   return tx.message.create({
     data: {
       customerId,
-      source: email.source ?? 'EMAIL',
+      source,
       direction: 'INBOUND',
       subject: email.subject,
       body: email.body,
@@ -83,7 +105,7 @@ export async function createInboundMessage(
       priority: detectPriority(email),
       sentiment: detectSentiment(email),
       requiresHumanValidation: true,
-      externalId: email.externalId ?? null,
+      externalId,
       sourceAccount: email.sourceAccount ?? null,
       createdAt: email.receivedAt ?? new Date(),
     },
