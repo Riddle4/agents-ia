@@ -104,7 +104,7 @@ async function ingestSingleInbox(
             subject,
             body,
             source: inbox.name,
-            externalId: String(uid),
+            externalId: `${inbox.name}-${uid}`,
             sourceAccount: inbox.user,
             receivedAt: parsed.date ?? new Date(),
           },

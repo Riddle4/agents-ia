@@ -76,20 +76,15 @@ export async function createInboundMessage(
   const externalId = email.externalId ?? null
 
   if (externalId) {
-    const existingMessage = await tx.message.findUnique({
+    const existingMessage = await tx.message.findFirst({
       where: {
-        source_externalId: {
-          source,
-          externalId,
-        },
+        source,
+        externalId,
       },
     })
 
     if (existingMessage) {
-      console.log('⚠️ Message déjà existant, ignoré')
-      console.log(`Source     : ${source}`)
-      console.log(`ExternalId : ${externalId}`)
-
+      console.log('⚠️ Message déjà traité, doublon technique ignoré')
       return existingMessage
     }
   }
