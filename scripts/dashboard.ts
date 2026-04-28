@@ -5,9 +5,36 @@ import { prisma } from "../src/lib/prisma"
 const app = express()
 const port = process.env.PORT || 3000
 
+app.use(express.urlencoded({ extended: true }))
+
+app.use(requireDashboardAuth)
+
 app.use(express.static(process.cwd() + "/public"))
 
-app.use(express.urlencoded({ extended: true }))
+function requireDashboardAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const auth = req.headers.authorization
+
+  if (!auth || !auth.startsWith("Basic ")) {
+    res.setHeader("WWW-Authenticate", 'Basic realm="Dashboard Agents IA"')
+    return res.status(401).send("Authentification requise")
+  }
+
+  const base64Credentials = auth.split(" ")[1]
+  const credentials = Buffer.from(base64Credentials, "base64").toString("utf-8")
+  const [username, password] = credentials.split(":")
+
+  const expectedUser = process.env.DASHBOARD_USER
+  const expectedPassword = process.env.DASHBOARD_PASSWORD
+
+  if (username !== expectedUser || password !== expectedPassword) {
+    res.setHeader("WWW-Authenticate", 'Basic realm="Dashboard Agents IA"')
+    return res.status(401).send("Accès refusé")
+  }
+
+  next()
+}
+
+app.use(requireDashboardAuth)
 
 function extractSuggestedReply(description: string) {
   const marker = "--- RÉPONSE SUGGÉRÉE ---"
