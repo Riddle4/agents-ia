@@ -3,7 +3,7 @@ import express from "express"
 import { prisma } from "../src/lib/prisma"
 
 const app = express()
-const port = 3000
+const port = process.env.PORT || 3000
 
 app.use(express.static(process.cwd() + "/public"))
 
