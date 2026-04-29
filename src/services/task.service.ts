@@ -46,11 +46,14 @@ export async function createSmartTaskIfNeeded(
     }
   }
 
+console.log("AI CONTEXT :", email.aiContext)
+
   const suggestedReply = await generateAIReply({
   fromEmail: email.fromEmail,
   subject: email.subject,
   body: email.body,
   decision,
+  aiContext: email.aiContext,
 })
   const task = await tx.task.create({
     data: {

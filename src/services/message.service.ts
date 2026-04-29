@@ -11,6 +11,18 @@ export type IncomingEmail = {
   source?: string
   externalId?: string
   sourceAccount?: string
+
+aiContext?: {
+  needsAvailability?: boolean
+  availableSlots?: {
+    date: string
+    weekday: string
+    start: string
+    end: string
+  }[]
+  availabilityText?: string | null
+}
+
 }
 
 function detectMessageType(email: IncomingEmail): string {
