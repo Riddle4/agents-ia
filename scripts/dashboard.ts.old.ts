@@ -127,13 +127,69 @@ app.get("/", async (_req, res) => {
     }
 
     .layout {
+      display: grid;
+      grid-template-columns: 270px 1fr;
       min-height: 100vh;
     }
 
+    .sidebar {
+      padding: 28px 22px;
+      background: rgba(255,255,255,0.035);
+      border-right: 1px solid rgba(255,255,255,0.08);
+      backdrop-filter: blur(20px);
+      position: sticky;
+      top: 0;
+      height: 100vh;
+    }
+
+    .brand {
+      margin-bottom: 34px;
+    }
+
+    .brand-name {
+      font-size: 25px;
+      font-weight: 900;
+      letter-spacing: -0.05em;
+    }
+
+    .brand-sub {
+      margin-top: 4px;
+      color: #7f91ad;
+      font-size: 13px;
+    }
+
+    .nav-item {
+      padding: 13px 15px;
+      border-radius: 15px;
+      color: #aab6ca;
+      margin-bottom: 8px;
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    .nav-item.active {
+      background: rgba(0, 153, 255, 0.14);
+      color: white;
+      border: 1px solid rgba(0,153,255,0.25);
+      box-shadow: 0 0 30px rgba(0, 153, 255, 0.08);
+    }
+
+    .sidebar-footer {
+      position: absolute;
+      bottom: 24px;
+      left: 22px;
+      right: 22px;
+      padding: 16px;
+      border-radius: 18px;
+      background: rgba(0,0,0,0.24);
+      border: 1px solid rgba(255,255,255,0.08);
+      color: #9aa9c0;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
     .main {
-      width: min(1380px, calc(100% - 68px));
-      margin: 0 auto;
-      padding: 34px 0;
+      padding: 34px;
     }
 
     .topbar {
@@ -506,6 +562,14 @@ app.get("/", async (_req, res) => {
     }
 
     @media (max-width: 1100px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        display: none;
+      }
+
       .hero {
         grid-template-columns: 1fr;
         text-align: center;
@@ -523,8 +587,7 @@ app.get("/", async (_req, res) => {
 
     @media (max-width: 700px) {
       .main {
-        width: calc(100% - 40px);
-        padding: 20px 0;
+        padding: 20px;
       }
 
       h1 {
@@ -559,6 +622,25 @@ app.get("/", async (_req, res) => {
 
 <body>
   <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-name">COSMO</div>
+        <div class="brand-sub">L’intelligence orchestrée</div>
+      </div>
+
+      <div class="nav-item active">Dashboard</div>
+      <div class="nav-item">Agents</div>
+      <div class="nav-item">Emails</div>
+      <div class="nav-item">Tâches</div>
+      <div class="nav-item">Orchestrator</div>
+      <div class="nav-item">Paramètres</div>
+
+      <div class="sidebar-footer">
+        <strong>Echo</strong><br />
+        Agent email actif. Surveillance continue des communications entrantes.
+      </div>
+    </aside>
+
     <main class="main">
       <div class="topbar">
         <div>
