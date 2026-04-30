@@ -55,25 +55,34 @@ console.log("AI CONTEXT :", email.aiContext)
   decision,
   aiContext: email.aiContext,
 })
-  const task = await tx.task.create({
-    data: {
-      customerId,
-      taskType: decision.taskType,
-      title: decision.title,
-      description: `
+const task = await tx.task.create({
+  data: {
+    customerId,
+    taskType: decision.taskType,
+    title: decision.title,
+    description: `
+--- RÉSUMÉ IA ---
+
 ${decision.description}
+
+--- MESSAGE CLIENT ---
+
+De : ${email.fromEmail}
+Sujet : ${email.subject}
+
+${email.body}
 
 --- RÉPONSE SUGGÉRÉE ---
 
 ${suggestedReply}
-      `.trim(),
-      status: 'TODO',
-      priority: decision.priority,
-      dueAt: decision.dueAt,
-    },
-  })
+`.trim(),
+    status: 'TODO',
+    priority: decision.priority,
+    dueAt: decision.dueAt,
+  },
+})
 
-  return {
+ return {
     task,
     action: 'CREATED',
     decision,

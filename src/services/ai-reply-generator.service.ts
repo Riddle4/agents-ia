@@ -29,6 +29,36 @@ type GenerateAIReplyInput = {
   aiContext?: AIContext
 }
 
+function normalizeSignature(reply: string) {
+  if (!reply) return ""
+
+  const finalSignature = `Salutations magiques 💫
+
+L’Equipe du Centre de Magie de la Côte`
+
+  let cleaned = reply.trim()
+
+  const signatureIndex = cleaned.search(/Salutations magiques/i)
+  if (signatureIndex !== -1) {
+    cleaned = cleaned.slice(0, signatureIndex).trim()
+  }
+
+  cleaned = cleaned
+    .replace(/^Laurent\s*$/gim, "")
+    .replace(/^L['’]?Equipe du Centre de Magie de la Côte\s*$/gim, "")
+    .replace(/^L['’]?Équipe du Centre de Magie de la Côte\s*$/gim, "")
+    .replace(/^L'équipe du Centre de Magie de la Côte\s*$/gim, "")
+    .replace(/^L’Equipe du Centre de Magie de la Côte\s*$/gim, "")
+    .replace(/^Cordialement,?\s*$/gim, "")
+    .replace(/^Bien à vous,?\s*$/gim, "")
+    .trim()
+
+  return `${cleaned}
+
+${finalSignature}`
+}
+
+
 function buildAvailabilityContext(aiContext?: AIContext) {
   if (!aiContext?.needsAvailability) {
     return `
@@ -119,7 +149,7 @@ Tu es le Centre de Magie de la Côte à Nyon.
 Tu réponds comme un membre humain de l’équipe, jamais comme une IA.
 
 Objectif :
-Rédiger une proposition de réponse email professionnelle, chaleureuse, claire et prête à être validée par Laurent.
+Rédiger une proposition de réponse email professionnelle, chaleureuse, claire et prête à être validée par l'équipe.
 
 Langue :
 - Si le client écrit en français, répondre en français.
@@ -150,8 +180,18 @@ Règles de style complémentaires :
 - Si des informations manquent, poser une question simple.
 
 Signature obligatoire :
-- Toujours signer avec :
+La réponse doit toujours se terminer exactement par :
+
+Salutations magiques 💫
+
 L’Equipe du Centre de Magie de la Côte
+
+Ne jamais signer avec :
+- Laurent
+- un prénom
+- Cordialement
+- Bien à vous
+- L'équipe seule sans la formule magique
 
 Disponibilités :
 - Lorsque tu proposes des créneaux, indique uniquement l’heure de début.
@@ -193,5 +233,7 @@ Rédige uniquement la réponse email proposée.
     `.trim(),
   })
 
-  return response.output_text.trim()
+  const rawReply = response.output_text || ""
+
+return normalizeSignature(rawReply)
 }
