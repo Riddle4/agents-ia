@@ -1,6 +1,12 @@
 import "dotenv/config"
 import express from "express"
 import { prisma } from "../src/lib/prisma"
+import {
+  addIgnoredSender,
+  listIgnoredSenders,
+  removeIgnoredSender,
+} from "../src/services/ignored-sender.service"
+import { generateReplyForTaskWithHumanInfo } from "../src/services/task.service"
 
 const app = express()
 const port = process.env.PORT || 3000
@@ -52,6 +58,23 @@ function extractSuggestedReply(description: string) {
   return description.split(marker)[1].trim()
 }
 
+function extractInternalInfoRequest(description: string) {
+  const internalMarker = "--- INFORMATION INTERNE REQUISE ---"
+  const messageMarker = "--- MESSAGE CLIENT ---"
+
+  if (!description.includes(internalMarker)) {
+    return ""
+  }
+
+  const afterInternalMarker = description.split(internalMarker)[1]
+
+  if (afterInternalMarker.includes(messageMarker)) {
+    return afterInternalMarker.split(messageMarker)[0].trim()
+  }
+
+  return afterInternalMarker.trim()
+}
+
 function extractClientMessage(description: string) {
   const messageMarker = "--- MESSAGE CLIENT ---"
   const replyMarker = "--- RÉPONSE SUGGÉRÉE ---"
@@ -82,6 +105,29 @@ app.post("/tasks/:id/done", async (req, res) => {
   res.redirect("/")
 })
 
+app.post("/tasks/:id/generate-reply", async (req, res) => {
+  const humanProvidedInfo = String(req.body.humanProvidedInfo || "")
+
+  await generateReplyForTaskWithHumanInfo(req.params.id, humanProvidedInfo)
+
+  res.redirect("/")
+})
+
+app.post("/ignored-senders", async (req, res) => {
+  const email = String(req.body.email || "")
+  const reason = String(req.body.reason || "")
+
+  await addIgnoredSender(email, reason)
+
+  res.redirect("/")
+})
+
+app.post("/ignored-senders/:id/delete", async (req, res) => {
+  await removeIgnoredSender(req.params.id)
+
+  res.redirect("/")
+})
+
 app.get("/", async (_req, res) => {
   const tasks = await prisma.task.findMany({
     where: {
@@ -96,6 +142,7 @@ app.get("/", async (_req, res) => {
       customer: true,
     },
   })
+  const ignoredSenders = await listIgnoredSenders()
 
   const totalTasks = tasks.length
   const highTasks = tasks.filter((task) => task.priority === "HIGH").length
@@ -108,7 +155,7 @@ app.get("/", async (_req, res) => {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Ferme d’Agents IA — Dashboard</title>
+  <title>Cosmo IA — Dashboard</title>
 
   <style>
     * {
@@ -142,6 +189,24 @@ app.get("/", async (_req, res) => {
       justify-content: space-between;
       gap: 20px;
       margin-bottom: 28px;
+    }
+
+    .brand-heading {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      min-width: 0;
+    }
+
+    .cosmo-logo {
+      width: 54px;
+      height: 54px;
+      object-fit: contain;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.96);
+      border: 1px solid rgba(255,255,255,0.2);
+      padding: 8px;
+      flex: 0 0 auto;
     }
 
     h1 {
@@ -305,6 +370,69 @@ app.get("/", async (_req, res) => {
       font-size: 14px;
     }
 
+    .settings-panel {
+      padding: 20px;
+      border-radius: 22px;
+      background: rgba(255,255,255,0.055);
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: 0 18px 50px rgba(0,0,0,0.22);
+      margin-bottom: 28px;
+    }
+
+    .settings-form {
+      display: grid;
+      grid-template-columns: minmax(230px, 1fr) minmax(220px, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      margin-top: 14px;
+    }
+
+    .input {
+      width: 100%;
+      border-radius: 13px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(0,0,0,0.24);
+      color: #eef5ff;
+      padding: 12px 13px;
+      font: inherit;
+      outline: none;
+    }
+
+    .input::placeholder {
+      color: #73839d;
+    }
+
+    .ignored-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 15px;
+    }
+
+    .ignored-row {
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) minmax(160px, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 11px 12px;
+      border-radius: 14px;
+      background: rgba(0,0,0,0.2);
+      border: 1px solid rgba(255,255,255,0.07);
+      color: #c4d0e4;
+      font-size: 14px;
+    }
+
+    .ignored-email {
+      color: #ffffff;
+      font-weight: 800;
+    }
+
+    .danger-button {
+      background: rgba(255, 80, 80, 0.16);
+      color: #ffaaaa;
+      border: 1px solid rgba(255,80,80,0.25);
+      box-shadow: none;
+    }
+
     .empty {
       padding: 28px;
       border-radius: 22px;
@@ -460,6 +588,32 @@ app.get("/", async (_req, res) => {
       outline: none;
     }
 
+    .human-info-form {
+      padding: 0 17px 17px;
+    }
+
+    .human-info-input {
+      width: 100%;
+      min-height: 170px;
+      padding: 15px;
+      border-radius: 15px;
+      border: 1px solid rgba(255,255,255,0.12);
+      font-size: 15px;
+      line-height: 1.55;
+      resize: vertical;
+      box-sizing: border-box;
+      color: #eef5ff;
+      background: rgba(255,255,255,0.055);
+      outline: none;
+      font-family: inherit;
+    }
+
+    .human-info-actions {
+      margin-top: 12px;
+      display: flex;
+      justify-content: flex-end;
+    }
+
     .actions {
       display: flex;
       gap: 10px;
@@ -536,12 +690,23 @@ app.get("/", async (_req, res) => {
         flex-direction: column;
       }
 
+      .brand-heading {
+        align-items: flex-start;
+      }
+
+      .cosmo-logo {
+        width: 48px;
+        height: 48px;
+      }
+
       .badges {
         justify-content: flex-start;
       }
 
       .kpi-grid,
-      .task-meta {
+      .task-meta,
+      .settings-form,
+      .ignored-row {
         grid-template-columns: 1fr;
       }
 
@@ -561,9 +726,12 @@ app.get("/", async (_req, res) => {
   <div class="layout">
     <main class="main">
       <div class="topbar">
-        <div>
-          <h1>Ferme d’Agents IA</h1>
-          <div class="subtitle">Pilotage intelligent des communications entrantes</div>
+        <div class="brand-heading">
+          <img src="/cosmo-logo.svg" alt="Cosmo" class="cosmo-logo" />
+          <div>
+            <h1>Cosmo IA</h1>
+            <div class="subtitle">Pilotage intelligent des communications entrantes - Powered by Cosmo</div>
+          </div>
         </div>
         <div class="status-pill">● Orchestrator actif</div>
       </div>
@@ -620,6 +788,41 @@ app.get("/", async (_req, res) => {
       </section>
 
       <div class="section-title">
+        <h2>Expéditeurs ignorés</h2>
+        <span>${ignoredSenders.length} adresse(s)</span>
+      </div>
+
+      <section class="settings-panel">
+        <div class="subtitle">Les emails provenant de ces adresses sont marqués comme lus sans réponse IA.</div>
+
+        <form class="settings-form" method="POST" action="/ignored-senders">
+          <input class="input" type="email" name="email" placeholder="ads-noreply@google.com" required />
+          <input class="input" type="text" name="reason" placeholder="Raison optionnelle" />
+          <button type="submit">Ajouter</button>
+        </form>
+
+        <div class="ignored-list">
+          ${
+            ignoredSenders.length === 0
+              ? `<div class="empty">Aucun expéditeur ajouté manuellement pour le moment.</div>`
+              : ignoredSenders
+                  .map((sender) => {
+                    return `
+                      <div class="ignored-row">
+                        <div class="ignored-email">${escapeHtml(sender.email)}</div>
+                        <div>${escapeHtml(sender.reason || "Sans raison")}</div>
+                        <form method="POST" action="/ignored-senders/${sender.id}/delete">
+                          <button class="danger-button" type="submit">Supprimer</button>
+                        </form>
+                      </div>
+                    `
+                  })
+                  .join("")
+          }
+        </div>
+      </section>
+
+      <div class="section-title">
         <h2>Dernières tâches générées</h2>
         <span>${totalTasks} tâche(s) à traiter</span>
       </div>
@@ -631,6 +834,7 @@ app.get("/", async (_req, res) => {
               .map((task) => {
                 const description = task.description || ""
                 const suggestedReply = extractSuggestedReply(description)
+                const internalInfoRequest = extractInternalInfoRequest(description)
                 const clientMessage = extractClientMessage(description)
 
                 const customerName = [
@@ -682,6 +886,21 @@ app.get("/", async (_req, res) => {
                       <summary>Lire le message client complet</summary>
                       <div class="message-box">${escapeHtml(clientMessage)}</div>
                     </details>
+
+                    ${
+                      internalInfoRequest
+                        ? `<details class="details-box" open>
+                            <summary>Information interne requise</summary>
+                            <div class="message-box">${escapeHtml(internalInfoRequest)}</div>
+                            <form class="human-info-form" method="POST" action="/tasks/${task.id}/generate-reply">
+                              <textarea class="human-info-input" name="humanProvidedInfo" placeholder="Ajoutez ici les informations métier à utiliser pour générer la réponse client : description, tarif, durée, conditions, disponibilité, etc." required></textarea>
+                              <div class="human-info-actions">
+                                <button class="copy-button" type="submit">Générer la réponse IA</button>
+                              </div>
+                            </form>
+                          </details>`
+                        : ""
+                    }
 
                     <details class="details-box">
                       <summary>Voir la réponse IA complète</summary>

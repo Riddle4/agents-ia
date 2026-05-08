@@ -1,12 +1,25 @@
 import OpenAI from "openai"
 import type { SmartTaskDecision } from "./task-intelligence.service"
+import type { EmailAnalysis, EmailRequestType, ReplyMode } from "./email-analysis.service"
 import { laurentReplyStyle } from "../config/laurent-style"
-import { classifyRequest } from "./request-classifier.service"
+import { classifyRequest, type RequestType } from "./request-classifier.service"
 import { getBusinessTemplate } from "./reply-templates.service"
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+let openai: OpenAI | null = null
+
+function getOpenAIClient() {
+  if (!process.env.OPENAI_API_KEY) {
+    return null
+  }
+
+  if (!openai) {
+    openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    })
+  }
+
+  return openai
+}
 
 type AvailabilitySlot = {
   date: string
@@ -19,6 +32,9 @@ type AIContext = {
   needsAvailability?: boolean
   availableSlots?: AvailabilitySlot[]
   availabilityText?: string | null
+  availabilityError?: string | null
+  humanProvidedInfo?: string | null
+  emailAnalysis?: EmailAnalysis
 }
 
 type GenerateAIReplyInput = {
@@ -49,8 +65,10 @@ L’Equipe du Centre de Magie de la Côte`
     .replace(/^L['’]?Équipe du Centre de Magie de la Côte\s*$/gim, "")
     .replace(/^L'équipe du Centre de Magie de la Côte\s*$/gim, "")
     .replace(/^L’Equipe du Centre de Magie de la Côte\s*$/gim, "")
+    .replace(/^Centre de Magie de la Côte\s*$/gim, "")
     .replace(/^Cordialement,?\s*$/gim, "")
     .replace(/^Bien à vous,?\s*$/gim, "")
+    .replace(/^Belle journée,?\s*$/gim, "")
     .trim()
 
   return `${cleaned}
@@ -64,6 +82,21 @@ function buildAvailabilityContext(aiContext?: AIContext) {
     return `
 Disponibilités :
 Non applicable pour cette demande.
+`.trim()
+  }
+
+  if (aiContext.availabilityError) {
+    return `
+Disponibilités :
+La vérification du calendrier n'a pas pu être effectuée.
+
+Erreur interne :
+${aiContext.availabilityError}
+
+Instruction :
+- Ne propose aucun créneau.
+- Explique simplement que nous allons vérifier les disponibilités et revenir vers le client.
+- Ne laisse pas entendre que le calendrier a été consulté.
 `.trim()
   }
 
@@ -89,7 +122,131 @@ Instructions :
 - Ne dis jamais qu’un créneau est réservé ou bloqué.
 - Lorsque tu listes des disponibilités, indique uniquement l’heure de début.
 - Exemple : "samedi 6 juin à 10h00, 13h15 ou 15h45", pas "10h00 à 12h00".
-- Demande au client quel créneau lui conviendrait le mieux.
+- Si le mode de réponse demande une suite client, demande quel créneau conviendrait le mieux.
+`.trim()
+}
+
+function mapAnalysisRequestType(type?: EmailRequestType): RequestType | null {
+  if (!type || type === "CONFIRMATION_OR_THANKS") {
+    return null
+  }
+
+  const allowed: RequestType[] = [
+    "ANNIVERSAIRE",
+    "COURS_COLLECTIF",
+    "STAGE",
+    "ESCAPE_GAME",
+    "BOUTIQUE",
+    "ECOLE_PRIVEE",
+    "ANIMATION_EXTERNE",
+    "TEAM_BUILDING",
+    "SOIREE_MAGIQUE_PRIVEE",
+    "ANIMATION_DOMICILE_SIMPLE",
+    "QUESTION_SIMPLE",
+    "UNKNOWN",
+  ]
+
+  return allowed.includes(type as RequestType) ? (type as RequestType) : null
+}
+
+function buildReplyModeContext(replyMode?: ReplyMode) {
+  switch (replyMode) {
+    case "ANSWER_AND_CLOSE":
+      return `
+Mode de réponse : ANSWER_AND_CLOSE
+- Réponds clairement au message.
+- Termine naturellement, sans poser de question au client.
+- N'ajoute pas de formule du type "n'hésitez pas..." si elle ouvre artificiellement une suite.
+- Utilise ce mode notamment pour une confirmation, un remerciement, une information suffisante ou un message qui ne nécessite pas d'action client.
+`.trim()
+
+    case "ANSWER_AND_ASK":
+      return `
+Mode de réponse : ANSWER_AND_ASK
+- Réponds d'abord à ce qui peut être répondu.
+- Pose au maximum une question utile au client à la fin.
+- La question doit être directement nécessaire pour avancer.
+`.trim()
+
+    case "ASK_MISSING_INFO":
+      return `
+Mode de réponse : ASK_MISSING_INFO
+- Une information indispensable manque côté client.
+- Explique brièvement ce qui est possible.
+- Pose uniquement les questions strictement nécessaires.
+- Regroupe les questions en une formulation courte.
+`.trim()
+
+    case "ESCALATE_TO_HUMAN":
+      return `
+Mode de réponse : ESCALATE_TO_HUMAN
+- Il manque une information interne à l'équipe.
+- Ne pose pas au client une question destinée à l'équipe.
+- Ne donne pas de tarif, disponibilité, promesse ou décision non fournie.
+- Ne rédige pas une réponse client vague indiquant que nous allons vérifier le point.
+- La tâche doit être complétée par un humain avant préparation de la réponse finale.
+`.trim()
+
+    default:
+      return `
+Mode de réponse : non précisé
+- Réponds de manière naturelle.
+- Ne termine par une question que si elle est vraiment utile.
+`.trim()
+  }
+}
+
+function buildHumanAssistanceContext(analysis?: EmailAnalysis) {
+  if (!analysis?.missingHumanInfo.length && !analysis?.humanQuestion) {
+    return `
+Assistance humaine interne :
+Non requise.
+`.trim()
+  }
+
+  return `
+Assistance humaine interne requise :
+${analysis.missingHumanInfo.map((info) => `- ${info}`).join("\n")}
+
+Question pour la personne qui valide :
+${analysis.humanQuestion ?? "Information interne à compléter avant validation."}
+
+Instruction :
+- N'invente pas cette information dans la réponse client.
+- Ne transforme pas cette question interne en question au client.
+`.trim()
+}
+
+function buildHumanProvidedInfoContext(aiContext?: AIContext) {
+  if (!aiContext?.humanProvidedInfo?.trim()) {
+    return `
+Informations fournies par l'équipe :
+Aucune information complémentaire fournie.
+`.trim()
+  }
+
+  return `
+Informations fournies par l'équipe :
+${aiContext.humanProvidedInfo.trim()}
+
+Instruction :
+- Utilise ces informations comme source fiable pour rédiger la réponse client.
+- Tu peux maintenant répondre précisément au client.
+- Ne mentionne pas que l'équipe a dû compléter ces informations en interne.
+`.trim()
+}
+
+function buildCustomerMissingInfoContext(analysis?: EmailAnalysis) {
+  if (!analysis?.missingCustomerInfo.length) {
+    return `
+Informations client manquantes :
+Aucune information client indispensable détectée.
+`.trim()
+  }
+
+  return `
+Informations client manquantes :
+${analysis.missingCustomerInfo.map((info) => `- ${info}`).join("\n")}
 `.trim()
 }
 
@@ -127,11 +284,16 @@ Règles importantes :
 }
 
 export async function generateAIReply(input: GenerateAIReplyInput) {
-  if (!process.env.OPENAI_API_KEY) {
+  const client = getOpenAIClient()
+
+  if (!client) {
     throw new Error("OPENAI_API_KEY manquante dans .env")
   }
 
-  const requestType = classifyRequest(input.subject, input.body)
+  const analysis = input.aiContext?.emailAnalysis
+  const requestType =
+    mapAnalysisRequestType(analysis?.requestType) ??
+    classifyRequest(input.subject, input.body)
 
   const businessTemplate = getBusinessTemplate(requestType, {
     firstName: null,
@@ -140,8 +302,12 @@ export async function generateAIReply(input: GenerateAIReplyInput) {
 
   const availabilityContext = buildAvailabilityContext(input.aiContext)
   const businessContext = buildBusinessContext()
+  const replyModeContext = buildReplyModeContext(analysis?.replyMode)
+  const humanAssistanceContext = buildHumanAssistanceContext(analysis)
+  const customerMissingInfoContext = buildCustomerMissingInfoContext(analysis)
+  const humanProvidedInfoContext = buildHumanProvidedInfoContext(input.aiContext)
 
-  const response = await openai.responses.create({
+  const response = await client.responses.create({
     model: "gpt-4.1-mini",
     input: `
 Tu es le Centre de Magie de la Côte à Nyon.
@@ -164,6 +330,7 @@ Contraintes absolues :
 - Ne jamais confirmer une réservation.
 - Ne jamais dire qu’un créneau est réservé.
 - Ne jamais dire qu’un créneau est bloqué.
+- Ne jamais masquer une information interne manquante par une réponse vague du type "nous allons vérifier" ou "nous reviendrons vers vous".
 - Ne jamais ajouter de commentaire avant ou après la réponse.
 - La réponse doit être directement prête à copier-coller dans Gmail.
 
@@ -174,7 +341,9 @@ Règles de style complémentaires :
 - Réponse chaleureuse, professionnelle et fluide.
 - Ne pas être trop long.
 - Aller à l’essentiel.
-- Toujours guider le client vers une prochaine étape.
+- Guider le client vers une prochaine étape seulement si une prochaine étape est nécessaire.
+- Ne termine jamais par une question de confort ou une question automatique.
+- Si le mode est ANSWER_AND_CLOSE, conclus sans question.
 - Si le client hésite entre plusieurs options, recommander clairement l’option la plus adaptée.
 - Si une demande est impossible, répondre poliment et proposer une alternative.
 - Si des informations manquent, poser une question simple.
@@ -191,6 +360,8 @@ Ne jamais signer avec :
 - un prénom
 - Cordialement
 - Bien à vous
+- Belle journée
+- Centre de Magie de la Côte seul
 - L'équipe seule sans la formule magique
 
 Disponibilités :
@@ -211,6 +382,21 @@ ${businessContext}
 
 Type de demande identifié :
 ${requestType}
+
+Analyse structurée :
+Type : ${analysis?.requestType ?? "non disponible"}
+Lieu : ${analysis?.locationType ?? "non déterminé"}
+Vérification calendrier autorisée : ${analysis?.shouldCheckCalendar ? "oui" : "non"}
+Confiance : ${analysis?.confidence ?? "non disponible"}
+Résumé interne : ${analysis?.reasoningSummary ?? "non disponible"}
+
+${replyModeContext}
+
+${customerMissingInfoContext}
+
+${humanAssistanceContext}
+
+${humanProvidedInfoContext}
 
 Template métier à utiliser :
 ${businessTemplate}

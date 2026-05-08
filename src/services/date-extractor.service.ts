@@ -1,11 +1,29 @@
 import OpenAI from "openai"
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+let openai: OpenAI | null = null
+
+function getOpenAIClient() {
+  if (!process.env.OPENAI_API_KEY) {
+    return null
+  }
+
+  if (!openai) {
+    openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    })
+  }
+
+  return openai
+}
 
 export async function extractDateRangeFromText(text: string) {
-  const response = await openai.responses.create({
+  const client = getOpenAIClient()
+
+  if (!client) {
+    return null
+  }
+
+  const response = await client.responses.create({
     model: "gpt-4.1-mini",
     input: `
 Tu es un expert en extraction de dates.

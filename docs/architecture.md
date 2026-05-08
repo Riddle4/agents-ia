@@ -132,6 +132,8 @@ Fichier : `src/services/ai-reply-generator.service.ts`
 
 La generation utilise OpenAI avec le modele `gpt-4.1-mini`.
 
+Avant la generation, le systeme peut recevoir une analyse structuree produite par `src/services/email-analysis.service.ts`. Cette analyse indique le type de demande, le lieu, le mode de reponse attendu, les informations client manquantes et les informations internes a demander a un humain.
+
 Le prompt contient :
 
 - le contexte du Centre de Magie de la Cote ;
@@ -139,6 +141,8 @@ Le prompt contient :
 - les contraintes absolues ;
 - le template metier ;
 - les disponibilites reelles, si disponibles ;
+- le mode de reponse attendu ;
+- les informations internes a ne pas inventer ;
 - le message client ;
 - l'analyse interne de la tache.
 
@@ -154,11 +158,22 @@ L'Equipe du Centre de Magie de la Cote
 
 Fichiers :
 
+- `src/services/email-analysis.service.ts`
 - `src/services/date-extractor.service.ts`
 - `src/services/calendar.service.ts`
 - `src/services/availability.service.ts`
 
-Le systeme extrait une plage de dates depuis le message client, interroge Google Calendar FreeBusy, puis compare les indisponibilites aux creneaux metier codes en dur.
+Le systeme consulte Google Calendar uniquement si l'analyse structuree autorise la verification calendrier.
+
+Regle actuelle :
+
+```text
+requestType = ANNIVERSAIRE
+locationType = CENTRE_MAGIE_NYON
+shouldCheckCalendar = true
+```
+
+Si cette regle est remplie, le systeme extrait une plage de dates depuis le message client, interroge Google Calendar FreeBusy, puis compare les indisponibilites aux creneaux metier codes en dur.
 
 Creneaux actuellement configures :
 
@@ -202,4 +217,4 @@ Journal technique des evenements internes.
 - Dashboard monolithique avec HTML/CSS inline.
 - Creneaux de disponibilite codes en dur.
 - Pas encore de mecanisme d'envoi email controle depuis le dashboard.
-
+- Analyse des pieces jointes pas encore implementee.

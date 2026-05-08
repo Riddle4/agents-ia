@@ -162,5 +162,5 @@ Les prompts interdisent explicitement d'inventer des tarifs, des disponibilites 
 
 - [Architecture](docs/architecture.md)
 - [Configuration](docs/configuration.md)
+- [Qualite des reponses IA](docs/ai-response-quality.md)
 - [Operations](docs/operations.md)
-

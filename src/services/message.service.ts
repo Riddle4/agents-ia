@@ -1,4 +1,5 @@
 import { prisma } from '../lib/prisma'
+import type { EmailAnalysis } from './email-analysis.service'
 
 export type IncomingEmail = {
   fromEmail: string
@@ -21,6 +22,9 @@ aiContext?: {
     end: string
   }[]
   availabilityText?: string | null
+  availabilityError?: string | null
+  humanProvidedInfo?: string | null
+  emailAnalysis?: EmailAnalysis
 }
 
 }

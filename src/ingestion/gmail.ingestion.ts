@@ -1,6 +1,7 @@
 import { ImapFlow } from "imapflow"
 import { simpleParser } from "mailparser"
 import { Orchestrator } from "../orchestrator/orchestrator"
+import { isIgnoredSender } from "../services/ignored-sender.service"
 
 type GmailInboxConfig = {
   name: string
@@ -84,11 +85,8 @@ async function ingestSingleInbox(
         const subject = parsed.subject ?? "(Sans sujet)"
         const body = parsed.text ?? parsed.html ?? ""
 
-        if (
-          fromEmail.includes("no-reply") ||
-          fromEmail.includes("accounts.google.com")
-        ) {
-          console.log(`⏭️ Email automatique ignoré : ${fromEmail}`)
+        if (await isIgnoredSender(fromEmail)) {
+          console.log(`⏭️ Email ignoré : ${fromEmail}`)
 
           await client.messageFlagsAdd(uid, ["\\Seen"])
           continue
