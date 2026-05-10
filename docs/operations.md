@@ -126,6 +126,7 @@ npx prisma generate
 - Le worker marque les emails comme lus apres traitement reussi.
 - Les reponses sont des suggestions : aucune reponse n'est envoyee automatiquement.
 - Les emails sont dedoublonnes par couple `source` + `externalId`.
+- La creation d'evenements anniversaire dans Google Calendar necessite un `GOOGLE_REFRESH_TOKEN` genere avec le scope `https://www.googleapis.com/auth/calendar`.
 
 ## Depannage Rapide
 
@@ -148,4 +149,3 @@ Verifier :
 - que `npm run dashboard` tourne ;
 - le port utilise ;
 - les variables `DASHBOARD_USER` et `DASHBOARD_PASSWORD`.
-

@@ -2,7 +2,7 @@ import "dotenv/config"
 import { google } from "googleapis"
 import http from "http"
 
-const SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
+const SCOPES = ["https://www.googleapis.com/auth/calendar"]
 const port = Number(process.env.GOOGLE_TOKEN_PORT || 3000)
 const redirectUri = `http://localhost:${port}`
 

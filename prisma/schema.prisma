@@ -71,3 +71,85 @@ model IgnoredSender {
   reason    String?
   createdAt DateTime @default(now())
 }
+
+model MarketCompetitor {
+  id        String   @id @default(uuid())
+  name      String
+  website   String?
+  address   String?
+  region    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  offers MarketOffer[]
+}
+
+model MarketOffer {
+  id           String   @id @default(uuid())
+  competitorId String
+  domain       String
+  title        String?
+  description  String?
+  price        Float?
+  currency     String?
+  duration     String?
+  ageMin       Int?
+  ageMax       Int?
+  location     String?
+  schedule     String?
+  groupSize    Int?
+  status       String   @default("UNKNOWN")
+  sourceUrl    String?
+  confidence   Float?
+  detectedAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  competitor MarketCompetitor @relation(fields: [competitorId], references: [id])
+  history    MarketOfferHistory[]
+}
+
+model MarketOfferHistory {
+  id         String   @id @default(uuid())
+  offerId    String
+  price      Float?
+  status     String
+  capturedAt DateTime @default(now())
+
+  offer MarketOffer @relation(fields: [offerId], references: [id])
+}
+
+model MarketScan {
+  id         String    @id @default(uuid())
+  domain     String
+  region     String
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  status     String
+
+  extractedData MarketExtractedData[]
+}
+
+model MarketExtractedData {
+  id           String   @id @default(uuid())
+  marketScanId String
+  competitor   String
+  domain       String
+  rawContent   String
+  parsedData   Json?
+  confidence   Float?
+  sourceUrl    String
+  createdAt    DateTime @default(now())
+
+  marketScan MarketScan @relation(fields: [marketScanId], references: [id])
+}
+
+model MarketAlert {
+  id         String   @id @default(uuid())
+  type       String
+  message    String
+  domain     String
+  competitor String?
+  createdAt  DateTime @default(now())
+  isRead     Boolean  @default(false)
+}

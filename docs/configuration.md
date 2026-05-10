@@ -24,8 +24,21 @@ Cle API OpenAI utilisee pour :
 
 - generer les reponses suggerees ;
 - extraire les plages de dates depuis les emails.
+- analyser les formulaires d'anniversaire uploades.
 
 Sans cette variable, la generation de reponse echoue.
+
+### `BIRTHDAY_ANALYSIS_MODEL`
+
+Modele OpenAI utilise pour lire les formulaires d'anniversaire PDF/JPG et detecter les cases cochees.
+
+Valeur recommandee :
+
+```text
+gpt-5.5
+```
+
+Si votre compte API n'a pas acces a ce modele, utilisez un modele vision plus puissant disponible sur votre compte.
 
 ## Gmail
 
@@ -132,4 +145,3 @@ Tester les disponibilites Google Calendar :
 ```bash
 tsx scripts/test-availability.ts
 ```
-

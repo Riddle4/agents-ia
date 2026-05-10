@@ -81,6 +81,12 @@ GOOGLE_TOKEN_PORT=3002 npx tsx scripts/generate-google-token.ts
 
 Attention : le redirect URI correspondant doit etre autorise dans Google Cloud.
 
+Depuis l'ajout de la fonctionnalite "Enregistrer un anniversaire", le scope Google Calendar n'est plus seulement readonly. Il faut regenerer le token avec le scope :
+
+```text
+https://www.googleapis.com/auth/calendar
+```
+
 ## Ports
 
 Theraflow peut utiliser `localhost:3000`.
@@ -101,6 +107,7 @@ Variables importantes :
 
 - `DATABASE_URL`
 - `OPENAI_API_KEY`
+- `BIRTHDAY_ANALYSIS_MODEL`
 - `GMAIL_INFO_USER`
 - `GMAIL_INFO_APP_PASSWORD`
 - `GMAIL_MAGIELACOTE_USER`
@@ -298,6 +305,25 @@ Branding actuel :
 - logo : `public/cosmo-logo.svg`
 
 Le dashboard liste les taches `TODO`, montre le message client et la reponse IA, puis permet de marquer une tache en `DONE`.
+
+Il contient aussi une section :
+
+```text
+Enregistrer un anniversaire
+```
+
+Flux :
+
+1. l'humain upload des fichiers PDF/JPG/PNG du formulaire de reservation ;
+2. le navigateur convertit les fichiers en base64 et les envoie a `/birthday-reservations/analyze` ;
+3. `src/services/birthday-reservation.service.ts` envoie les fichiers a l'API OpenAI Responses avec `input_file` pour les PDF et `input_image` pour les images ;
+4. l'IA extrait factuellement variante cochee, preuves visuelles, enfant, age, nombre d'enfants, date, horaires, prix de base et options ;
+5. le calcul du total est fait cote code, pas par l'IA ;
+6. le resume apparait dans un textarea modifiable avec un bloc de controle extraction ;
+7. l'humain clique sur `Approuver et ajouter l'événement` ;
+8. `/birthday-reservations/add-event` ajoute l'evenement dans Google Calendar avec le resume valide.
+
+Le modele par defaut pour cette analyse est `process.env.BIRTHDAY_ANALYSIS_MODEL || "gpt-5.5"`. Si l'API n'a pas acces a `gpt-5.5`, configurer `BIRTHDAY_ANALYSIS_MODEL` avec un modele vision fort disponible.
 
 ## Documentation
 

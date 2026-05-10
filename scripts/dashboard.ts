@@ -7,11 +7,24 @@ import {
   removeIgnoredSender,
 } from "../src/services/ignored-sender.service"
 import { generateReplyForTaskWithHumanInfo } from "../src/services/task.service"
+import {
+  addBirthdayReservationToCalendar,
+  analyzeBirthdayReservation,
+  type UploadedReservationFile,
+} from "../src/services/birthday-reservation.service"
+import {
+  isMarketDomain,
+  loadMarketDomainResults,
+  loadMarketDashboardSnapshot,
+  runMarketAnalysis,
+  type MarketDomain,
+} from "../src/services/market-analysis.service"
 
 const app = express()
 const port = process.env.PORT || 3000
 
 app.use(express.urlencoded({ extended: true }))
+app.use(express.json({ limit: "35mb" }))
 
 function requireDashboardAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
   const auth = req.headers.authorization
@@ -92,6 +105,36 @@ function extractClientMessage(description: string) {
   return afterMessageMarker.trim()
 }
 
+const marketDomainLabels: Record<MarketDomain, string> = {
+  ANNIVERSAIRE: "Anniversaires",
+  STAGE: "Stages",
+  COURS: "Cours de magie",
+}
+
+const marketDomainViews: Record<MarketDomain, string> = {
+  ANNIVERSAIRE: "market-anniversaires",
+  STAGE: "market-stages",
+  COURS: "market-cours",
+}
+
+function formatMarketPrice(price: number | null, currency: string | null) {
+  if (price === null || Number.isNaN(Number(price))) {
+    return "Prix non détecté"
+  }
+
+  return `${currency || "CHF"} ${Number(price).toLocaleString("fr-CH")}`
+}
+
+function renderMarketSourceLink(url: string | null) {
+  if (!url) {
+    return `<span class="no-reply">Source non détectée</span>`
+  }
+
+  const safeUrl = escapeHtml(url)
+
+  return `<a class="link-button market-source-link" href="${safeUrl}" data-source-url="${safeUrl}" target="_blank" rel="noopener noreferrer">Voir la source</a>`
+}
+
 app.post("/tasks/:id/done", async (req, res) => {
   await prisma.task.update({
     where: {
@@ -128,6 +171,69 @@ app.post("/ignored-senders/:id/delete", async (req, res) => {
   res.redirect("/")
 })
 
+app.post("/birthday-reservations/analyze", async (req, res) => {
+  try {
+    const files = Array.isArray(req.body.files)
+      ? (req.body.files as UploadedReservationFile[])
+      : []
+
+    const analysis = await analyzeBirthdayReservation(files)
+
+    res.json({
+      success: true,
+      analysis,
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Erreur inconnue"
+
+    res.status(400).json({
+      success: false,
+      error: message,
+    })
+  }
+})
+
+app.post("/birthday-reservations/add-event", async (req, res) => {
+  await addBirthdayReservationToCalendar({
+    title: String(req.body.title || "Anniversaire magique"),
+    summary: String(req.body.summary || ""),
+    eventDate: String(req.body.eventDate || ""),
+    startTime: String(req.body.startTime || ""),
+    endTime: String(req.body.endTime || ""),
+  })
+
+  res.redirect("/#birthday-registration")
+})
+
+app.post("/market-analysis/run", async (_req, res) => {
+  try {
+    const requestedDomain = String(_req.body?.domain || "")
+    const domain = requestedDomain ? requestedDomain.toUpperCase() : ""
+
+    if (domain && !isMarketDomain(domain)) {
+      return res.status(400).json({
+        success: false,
+        error: "Domaine de scan invalide",
+      })
+    }
+
+    const summary = await runMarketAnalysis(domain ? domain : undefined)
+
+    res.json({
+      success: true,
+      summary,
+      targetView: domain ? marketDomainViews[domain] : "market-watch",
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Erreur inconnue"
+
+    res.status(400).json({
+      success: false,
+      error: message,
+    })
+  }
+})
+
 app.get("/", async (_req, res) => {
   const tasks = await prisma.task.findMany({
     where: {
@@ -143,6 +249,12 @@ app.get("/", async (_req, res) => {
     },
   })
   const ignoredSenders = await listIgnoredSenders()
+  const marketSnapshot = await loadMarketDashboardSnapshot()
+  const marketResults = {
+    ANNIVERSAIRE: await loadMarketDomainResults("ANNIVERSAIRE"),
+    STAGE: await loadMarketDomainResults("STAGE"),
+    COURS: await loadMarketDomainResults("COURS"),
+  }
 
   const totalTasks = tasks.length
   const highTasks = tasks.filter((task) => task.priority === "HIGH").length
@@ -174,13 +286,92 @@ app.get("/", async (_req, res) => {
     }
 
     .layout {
+      display: grid;
+      grid-template-columns: 280px 1fr;
       min-height: 100vh;
+    }
+
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 26px 20px;
+      background: rgba(255,255,255,0.045);
+      border-right: 1px solid rgba(255,255,255,0.08);
+      backdrop-filter: blur(18px);
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .sidebar-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .sidebar-logo {
+      width: 46px;
+      height: 46px;
+      object-fit: contain;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.96);
+      padding: 7px;
+      flex: 0 0 auto;
+    }
+
+    .sidebar-title {
+      font-size: 22px;
+      font-weight: 900;
+      letter-spacing: -0.04em;
+    }
+
+    .sidebar-subtitle {
+      color: #91a2bd;
+      font-size: 12px;
+      margin-top: 2px;
+    }
+
+    .side-nav {
+      display: grid;
+      gap: 8px;
+    }
+
+    .side-link {
+      width: 100%;
+      min-height: 44px;
+      border-radius: 14px;
+      padding: 12px 13px;
+      background: transparent;
+      border: 1px solid transparent;
+      color: #aab8ce;
+      font: inherit;
+      font-weight: 850;
+      text-align: left;
+      cursor: pointer;
+      transition: 0.16s ease;
+    }
+
+    .side-link:hover,
+    .side-link.is-active {
+      background: rgba(0, 153, 255, 0.13);
+      border-color: rgba(0,153,255,0.24);
+      color: #ffffff;
+      box-shadow: 0 0 28px rgba(0,153,255,0.08);
+    }
+
+    .sidebar-footer {
+      margin-top: auto;
+      color: #73839d;
+      font-size: 12px;
+      line-height: 1.45;
     }
 
     .main {
       width: min(1380px, calc(100% - 68px));
       margin: 0 auto;
       padding: 34px 0;
+      min-width: 0;
     }
 
     .topbar {
@@ -233,6 +424,14 @@ app.get("/", async (_req, res) => {
       box-shadow: 0 0 28px rgba(40,255,170,0.08);
     }
 
+    .app-section {
+      display: none;
+    }
+
+    .app-section.is-active {
+      display: block;
+    }
+
     .hero {
       display: grid;
       grid-template-columns: 210px 1fr 330px;
@@ -268,6 +467,19 @@ app.get("/", async (_req, res) => {
         0 0 60px rgba(0, 153, 255, 0.55),
         inset 0 0 30px rgba(255,255,255,0.05);
       background: #081120;
+    }
+
+    .spectra-img {
+      width: 190px;
+      height: 190px;
+      object-fit: contain;
+      border-radius: 50%;
+      border: 1px solid rgba(80, 185, 255, 0.55);
+      box-shadow:
+        0 0 60px rgba(0, 153, 255, 0.55),
+        inset 0 0 30px rgba(255,255,255,0.05);
+      background: #081120;
+      padding: 18px;
     }
 
     .hero h2 {
@@ -377,6 +589,253 @@ app.get("/", async (_req, res) => {
       border: 1px solid rgba(255,255,255,0.08);
       box-shadow: 0 18px 50px rgba(0,0,0,0.22);
       margin-bottom: 28px;
+    }
+
+    .birthday-workflow {
+      display: grid;
+      gap: 16px;
+    }
+
+    .upload-zone {
+      padding: 20px;
+      border-radius: 18px;
+      background: rgba(0,0,0,0.2);
+      border: 1px dashed rgba(125, 204, 255, 0.45);
+      cursor: pointer;
+      transition: 0.16s ease;
+    }
+
+    .upload-zone:hover,
+    .upload-zone.is-dragging {
+      border-color: rgba(125, 204, 255, 0.9);
+      background: rgba(0, 153, 255, 0.1);
+      box-shadow: 0 0 26px rgba(0, 153, 255, 0.12);
+    }
+
+    .file-input {
+      display: none;
+    }
+
+    .file-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .file-pill {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 9px 11px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.075);
+      border: 1px solid rgba(255,255,255,0.09);
+      color: #dce7f7;
+      font-size: 13px;
+    }
+
+    .editable-note {
+      color: #70caff;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .birthday-result {
+      display: none;
+      gap: 12px;
+      margin-top: 10px;
+    }
+
+    .birthday-result.is-visible {
+      display: grid;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr repeat(3, minmax(120px, 170px));
+      gap: 10px;
+      align-items: end;
+    }
+
+    .field-label {
+      display: grid;
+      gap: 7px;
+      color: #91a2bd;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .summary-editor {
+      width: 100%;
+      min-height: 220px;
+      border-radius: 15px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(0,0,0,0.24);
+      color: #eef5ff;
+      padding: 15px;
+      font: inherit;
+      line-height: 1.55;
+      resize: vertical;
+      outline: none;
+    }
+
+    .confirmation-editor {
+      min-height: 520px;
+      white-space: pre-wrap;
+      overflow: auto;
+    }
+
+    .field-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .confirmation-assets {
+      display: grid;
+      grid-template-columns: minmax(0, 420px);
+      gap: 12px;
+      margin-top: 4px;
+    }
+
+    .confirmation-asset {
+      overflow: hidden;
+      border-radius: 15px;
+      background: rgba(0,0,0,0.22);
+      border: 1px solid rgba(255,255,255,0.09);
+    }
+
+    .confirmation-asset img {
+      display: block;
+      width: 100%;
+      height: 132px;
+      object-fit: cover;
+    }
+
+    .confirmation-asset span {
+      display: block;
+      padding: 9px 10px;
+      color: #c4d0e4;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .warning-list {
+      display: none;
+      color: #ffd28a;
+      background: rgba(255, 190, 70, 0.12);
+      border: 1px solid rgba(255,190,70,0.22);
+      border-radius: 14px;
+      padding: 12px;
+      white-space: pre-wrap;
+      font-size: 14px;
+    }
+
+    .warning-list.is-visible {
+      display: block;
+    }
+
+    .extraction-details {
+      display: none;
+      color: #c4d0e4;
+      background: rgba(0,0,0,0.2);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 14px;
+      padding: 12px;
+      white-space: pre-wrap;
+      font-size: 14px;
+    }
+
+    .extraction-details.is-visible {
+      display: block;
+    }
+
+    .loading-text {
+      display: none;
+      color: #70caff;
+      font-weight: 800;
+      font-size: 14px;
+    }
+
+    .loading-text.is-visible {
+      display: block;
+    }
+
+    .market-status {
+      display: none;
+      color: #c4d0e4;
+      background: rgba(0,0,0,0.2);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 14px;
+      padding: 12px;
+      white-space: pre-wrap;
+      font-size: 14px;
+    }
+
+    .market-status.is-visible {
+      display: block;
+    }
+
+    .market-status.is-success {
+      color: #7effcf;
+      border-color: rgba(80,255,185,0.22);
+      background: rgba(80, 255, 185, 0.1);
+    }
+
+    .market-status.is-error {
+      color: #ffd28a;
+      border-color: rgba(255,190,70,0.22);
+      background: rgba(255, 190, 70, 0.12);
+    }
+
+    .market-scan-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+    }
+
+    .market-scan-card {
+      display: grid;
+      gap: 12px;
+      align-content: space-between;
+      min-height: 180px;
+      padding: 18px;
+      border-radius: 18px;
+      background: rgba(0,0,0,0.2);
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .market-scan-card h3 {
+      margin: 0;
+      font-size: 19px;
+      letter-spacing: -0.03em;
+    }
+
+    .market-result-row {
+      display: grid;
+      grid-template-columns: minmax(180px, 1fr) minmax(180px, 1.1fr) minmax(110px, 0.5fr) minmax(140px, 0.7fr) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 12px;
+      border-radius: 14px;
+      background: rgba(0,0,0,0.2);
+      border: 1px solid rgba(255,255,255,0.07);
+      color: #c4d0e4;
+      font-size: 14px;
+    }
+
+    .market-result-title {
+      color: #ffffff;
+      font-weight: 850;
+    }
+
+    .market-result-source {
+      overflow-wrap: anywhere;
+      color: #91a2bd;
+      font-size: 12px;
+      margin-top: 4px;
     }
 
     .settings-form {
@@ -648,6 +1107,24 @@ app.get("/", async (_req, res) => {
       box-shadow: 0 0 26px rgba(25,201,139,0.18);
     }
 
+    .link-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 13px;
+      padding: 11px 15px;
+      font-weight: 900;
+      color: white;
+      text-decoration: none;
+      background: rgba(255,255,255,0.1);
+      transition: 0.15s ease;
+    }
+
+    .link-button:hover {
+      transform: translateY(-1px);
+      background: rgba(255,255,255,0.16);
+    }
+
     .no-reply {
       color: #91a2bd;
       font-size: 14px;
@@ -660,6 +1137,21 @@ app.get("/", async (_req, res) => {
     }
 
     @media (max-width: 1100px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        position: static;
+        height: auto;
+        border-right: none;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+      }
+
+      .side-nav {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
       .hero {
         grid-template-columns: 1fr;
         text-align: center;
@@ -669,9 +1161,18 @@ app.get("/", async (_req, res) => {
         margin: 0 auto;
       }
 
+      .spectra-img {
+        margin: 0 auto;
+      }
+
       .kpi-grid,
       .task-meta {
         grid-template-columns: repeat(2, 1fr);
+      }
+
+      .market-scan-grid,
+      .market-result-row {
+        grid-template-columns: 1fr;
       }
     }
 
@@ -706,7 +1207,14 @@ app.get("/", async (_req, res) => {
       .kpi-grid,
       .task-meta,
       .settings-form,
-      .ignored-row {
+      .ignored-row,
+      .form-grid,
+      .confirmation-assets {
+        grid-template-columns: 1fr;
+      }
+
+      .market-scan-grid,
+      .market-result-row {
         grid-template-columns: 1fr;
       }
 
@@ -718,12 +1226,42 @@ app.get("/", async (_req, res) => {
         width: 155px;
         height: 155px;
       }
+
+      .spectra-img {
+        width: 155px;
+        height: 155px;
+      }
+
+      .side-nav {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
 
 <body>
   <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <img src="/cosmo-logo.svg" alt="Cosmo" class="sidebar-logo" />
+        <div>
+          <div class="sidebar-title">Cosmo IA</div>
+          <div class="sidebar-subtitle">Powered by Cosmo</div>
+        </div>
+      </div>
+
+      <nav class="side-nav" aria-label="Navigation principale">
+        <button class="side-link is-active" type="button" data-target-view="email-management">Gestion des e-mails</button>
+        <button class="side-link" type="button" data-target-view="birthday-registration">Enregistrer un anniversaire</button>
+        <button class="side-link" type="button" data-target-view="market-watch">Veille marché</button>
+        <button class="side-link" type="button" data-target-view="ignored-senders">Expéditeurs ignorés</button>
+      </nav>
+
+      <div class="sidebar-footer">
+        Les fonctionnalités Echo sont séparées par espace de travail pour garder les traitements lisibles.
+      </div>
+    </aside>
+
     <main class="main">
       <div class="topbar">
         <div class="brand-heading">
@@ -736,6 +1274,7 @@ app.get("/", async (_req, res) => {
         <div class="status-pill">● Orchestrator actif</div>
       </div>
 
+      <section class="app-section is-active" data-view="email-management">
       <section class="hero">
         <img src="/Echo.png" alt="Echo Agent Email" class="echo-img" />
 
@@ -786,7 +1325,373 @@ app.get("/", async (_req, res) => {
           <div class="kpi-value">${birthdayTasks}</div>
         </div>
       </section>
+      </section>
 
+      <section class="app-section" data-view="birthday-registration">
+      <div id="birthday-registration" class="section-title">
+        <h2>Enregistrer un anniversaire</h2>
+        <span>Upload PDF/JPG → résumé → calendrier</span>
+      </div>
+
+      <section class="settings-panel birthday-workflow">
+        <div id="birthdayDropzone" class="upload-zone">
+          <strong>Documents de réservation</strong>
+          <div class="subtitle">Glissez-déposez les PDF/JPG ici, ou cliquez pour les sélectionner.</div>
+          <input id="birthdayFiles" class="file-input" type="file" accept="application/pdf,image/jpeg,image/jpg,image/png" multiple />
+          <div id="birthdayFileList" class="file-list"></div>
+        </div>
+
+        <div class="actions">
+          <button id="analyzeBirthdayButton" class="copy-button" type="button">Analyser les documents</button>
+          <span id="birthdayLoading" class="loading-text">Analyse en cours...</span>
+        </div>
+
+        <div id="birthdayWarnings" class="warning-list"></div>
+        <div id="birthdayExtractionDetails" class="extraction-details"></div>
+
+        <form id="birthdayResult" class="birthday-result" method="POST" action="/birthday-reservations/add-event">
+          <div class="editable-note">Tous les champs ci-dessous sont modifiables avant l'ajout au calendrier.</div>
+
+          <div class="form-grid">
+            <label class="field-label">
+              Titre événement
+              <input id="birthdayTitle" class="input" name="title" required />
+            </label>
+
+            <label class="field-label">
+              Date
+              <input id="birthdayDate" class="input" type="date" name="eventDate" required />
+            </label>
+
+            <label class="field-label">
+              Début
+              <input id="birthdayStart" class="input" type="time" name="startTime" required />
+            </label>
+
+            <label class="field-label">
+              Fin
+              <input id="birthdayEnd" class="input" type="time" name="endTime" required />
+            </label>
+          </div>
+
+          <label class="field-label">
+            Résumé validé par l'humain
+            <textarea id="birthdaySummary" class="summary-editor" name="summary" required></textarea>
+          </label>
+
+          <div class="actions">
+            <button class="done-button" type="submit">Approuver et ajouter l'événement</button>
+            <button class="danger-button" type="button" id="cancelBirthdayButton">Annuler la saisie</button>
+          </div>
+
+          <label class="field-label">
+            <span class="field-header">
+              Brouillon de confirmation à envoyer au client
+              <button class="copy-button" type="button" id="copyBirthdayConfirmationButton">Copier</button>
+            </span>
+            <div id="birthdayConfirmationDraft" class="summary-editor confirmation-editor" contenteditable="true"></div>
+          </label>
+
+          <div class="confirmation-assets" aria-label="Image à insérer dans l'e-mail">
+            <div class="confirmation-asset">
+              <img src="/anniv3.jpeg" alt="Départ des invités" />
+              <span>anniv3.jpeg - Départ des invités</span>
+            </div>
+          </div>
+        </form>
+      </section>
+      </section>
+
+      <section class="app-section" data-view="market-watch">
+      <section class="hero">
+        <img src="/Spectra.png" alt="SPECTRA Agent Marché" class="spectra-img" />
+
+        <div>
+          <h2>SPECTRA</h2>
+          <div class="hero-sub">Agent de veille concurrentielle</div>
+          <div class="tagline">Il observe. Il analyse. Il anticipe.</div>
+          <div class="hero-text">
+            SPECTRA surveille les offres concurrentes en Suisse romande, extrait les informations publiques
+            et signale les nouvelles offres ou changements utiles pour ajuster les actions commerciales.
+          </div>
+
+          <div class="actions">
+            <span id="marketAnalysisLoading" class="loading-text">Analyse en cours...</span>
+          </div>
+        </div>
+
+        <div class="stats">
+          <div class="stat">
+            <strong>3</strong>
+            <span>Domaines suivis</span>
+          </div>
+          <div class="stat">
+            <strong>${marketSnapshot.unreadAlerts}</strong>
+            <span>Alertes non lues</span>
+          </div>
+          <div class="stat">
+            <strong>${marketSnapshot.totalOffers}</strong>
+            <span>Offres suivies</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="settings-panel birthday-workflow">
+        <div class="section-title">
+          <h2>Analyse concurrentielle</h2>
+          <span>SPECTRA intégré à Cosmo IA</span>
+        </div>
+
+        <div class="subtitle">
+          L’analyse tourne directement dans Cosmo IA : recherche Serper, lecture des pages publiques, analyse OpenAI et stockage dans la base Cosmo.
+        </div>
+
+        <section class="kpi-grid" style="margin: 0;">
+          <div class="kpi">
+            <div class="kpi-label">Anniversaires</div>
+            <div class="kpi-value">Suivi</div>
+          </div>
+
+          <div class="kpi">
+            <div class="kpi-label">Stages</div>
+            <div class="kpi-value">Suivi</div>
+          </div>
+
+          <div class="kpi">
+            <div class="kpi-label">Cours de magie</div>
+            <div class="kpi-value">Suivi</div>
+          </div>
+
+          <div class="kpi">
+            <div class="kpi-label">Alertes marché</div>
+            <div class="kpi-value">${marketSnapshot.totalAlerts}</div>
+          </div>
+        </section>
+
+        ${
+          marketSnapshot.isReady
+            ? ""
+            : `<div class="warning-list is-visible">Les tables de veille marché ne sont pas encore présentes. Lancez la migration Prisma avant la première analyse.</div>`
+        }
+
+        <div id="marketAnalysisStatus" class="market-status"></div>
+      </section>
+
+      <section class="settings-panel birthday-workflow">
+        <div class="section-title">
+          <h2>Choisir un scan</h2>
+          <span>Un domaine à la fois</span>
+        </div>
+
+        <div class="market-scan-grid">
+          <div class="market-scan-card">
+            <div>
+              <h3>Scanner tous les domaines suivis</h3>
+              <div class="subtitle">Anniversaires, stages et cours de magie en une seule passe.</div>
+            </div>
+            <div class="actions">
+              <button class="done-button market-scan-button" type="button" data-market-domain="">Scanner tous les domaines</button>
+            </div>
+          </div>
+
+          <div class="market-scan-card">
+            <div>
+              <h3>Scan Anniversaires</h3>
+              <div class="subtitle">Magiciens et animations anniversaires enfants en Suisse romande.</div>
+            </div>
+            <div class="actions">
+              <button class="copy-button market-scan-button" type="button" data-market-domain="ANNIVERSAIRE">Scanner</button>
+              <button class="side-link" type="button" data-target-view="market-anniversaires">Voir résultats (${marketSnapshot.domainCounts.ANNIVERSAIRE || 0})</button>
+            </div>
+          </div>
+
+          <div class="market-scan-card">
+            <div>
+              <h3>Scan Stages</h3>
+              <div class="subtitle">Stages et ateliers magie pendant les vacances en Suisse romande.</div>
+            </div>
+            <div class="actions">
+              <button class="copy-button market-scan-button" type="button" data-market-domain="STAGE">Scanner</button>
+              <button class="side-link" type="button" data-target-view="market-stages">Voir résultats (${marketSnapshot.domainCounts.STAGE || 0})</button>
+            </div>
+          </div>
+
+          <div class="market-scan-card">
+            <div>
+              <h3>Scan Cours de magie</h3>
+              <div class="subtitle">Écoles, cours et formations de magie proposés en Suisse romande.</div>
+            </div>
+            <div class="actions">
+              <button class="copy-button market-scan-button" type="button" data-market-domain="COURS">Scanner</button>
+              <button class="side-link" type="button" data-target-view="market-cours">Voir résultats (${marketSnapshot.domainCounts.COURS || 0})</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="settings-panel">
+        <div class="section-title">
+          <h2>Dernières alertes marché</h2>
+          <span>${Math.min(marketSnapshot.alerts.length, 5)} sur ${marketSnapshot.totalAlerts}</span>
+        </div>
+
+        <div class="ignored-list">
+          ${
+            marketSnapshot.alerts.length === 0
+              ? `<div class="empty">Aucune alerte marché pour le moment. Lancez SPECTRA pour créer le premier scan.</div>`
+              : marketSnapshot.alerts
+                  .slice(0, 5)
+                  .map((alert) => {
+                    return `
+                      <div class="ignored-row">
+                        <div class="ignored-email">${escapeHtml(alert.type)}</div>
+                        <div>${escapeHtml(alert.message)}</div>
+                        <button class="side-link" type="button" data-target-view="market-alerts">Voir détail</button>
+                      </div>
+                    `
+                  })
+                  .join("")
+          }
+        </div>
+
+        ${
+          marketSnapshot.alerts.length > 0
+            ? `<div class="actions">
+                <button class="copy-button" type="button" data-target-view="market-alerts">Voir toutes les alertes marché</button>
+              </div>`
+            : ""
+        }
+      </section>
+
+      <section class="settings-panel">
+        <div class="section-title">
+          <h2>Derniers scans</h2>
+          <span>${marketSnapshot.scans.length} affiché(s)</span>
+        </div>
+
+        <div class="ignored-list">
+          ${
+            marketSnapshot.scans.length === 0
+              ? `<div class="empty">Aucun scan marché enregistré.</div>`
+              : marketSnapshot.scans
+                  .map((scan) => {
+                    return `
+                      <div class="ignored-row">
+                        <div class="ignored-email">${escapeHtml(scan.domain)}</div>
+                        <div>${escapeHtml(scan.status)}</div>
+                        <div>${escapeHtml(scan.startedAt.toLocaleString("fr-CH"))}</div>
+                      </div>
+                    `
+                  })
+                  .join("")
+          }
+        </div>
+      </section>
+      </section>
+
+      <section class="app-section" data-view="market-alerts">
+        <div class="section-title">
+          <h2>Alertes marché</h2>
+          <span>${marketSnapshot.totalAlerts} alerte(s)</span>
+        </div>
+
+        <section class="settings-panel birthday-workflow">
+          <div class="actions">
+            <button class="side-link" type="button" data-target-view="market-watch">Retour veille marché</button>
+          </div>
+
+          ${
+            marketSnapshot.alerts.length === 0
+              ? `<div class="empty">Aucune alerte marché enregistrée.</div>`
+              : marketSnapshot.alerts
+                  .map((alert) => {
+                    const domain = isMarketDomain(alert.domain) ? alert.domain : null
+                    const domainView = domain ? marketDomainViews[domain] : "market-watch"
+                    const domainLabel = domain ? marketDomainLabels[domain] : alert.domain
+
+                    return `
+                      <details class="details-box">
+                        <summary>
+                          ${escapeHtml(alert.type)} · ${escapeHtml(domainLabel)} · ${escapeHtml(alert.createdAt.toLocaleString("fr-CH"))}
+                        </summary>
+                        <div class="message-box">
+                          <strong>Message</strong>
+                          ${escapeHtml(alert.message)}
+
+                          <strong>Domaine</strong>
+                          ${escapeHtml(domainLabel)}
+
+                          <strong>Concurrent</strong>
+                          ${escapeHtml(alert.competitor || "Non renseigné")}
+
+                          <strong>Statut</strong>
+                          ${alert.isRead ? "Lue" : "Non lue"}
+
+                          <div class="actions">
+                            <button class="copy-button" type="button" data-target-view="${domainView}">Voir les résultats du domaine</button>
+                          </div>
+                        </div>
+                      </details>
+                    `
+                  })
+                  .join("")
+          }
+        </section>
+      </section>
+
+      ${
+        (["ANNIVERSAIRE", "STAGE", "COURS"] as MarketDomain[])
+          .map((domain) => {
+            const rows = marketResults[domain]
+
+            return `
+              <section class="app-section" data-view="${marketDomainViews[domain]}">
+                <div class="section-title">
+                  <h2>${marketDomainLabels[domain]}</h2>
+                  <span>${rows.length} concurrent(s) détecté(s)</span>
+                </div>
+
+                <section class="settings-panel birthday-workflow">
+                  <div class="actions">
+                    <button class="copy-button market-scan-button" type="button" data-market-domain="${domain}">Relancer le scan ${marketDomainLabels[domain]}</button>
+                    <button class="side-link" type="button" data-target-view="market-watch">Retour veille marché</button>
+                  </div>
+
+                  ${
+                    rows.length === 0
+                      ? `<div class="empty">Aucun résultat pour ce domaine. Lancez le scan ${marketDomainLabels[domain]} pour détecter les concurrents.</div>`
+                      : `<div class="ignored-list">
+                          ${rows
+                            .map((row) => {
+                              const sourceUrl = row.sourceUrl || row.website
+
+                              return `
+                                <div class="market-result-row">
+                                  <div>
+                                    <div class="market-result-title">${escapeHtml(row.competitorName)}</div>
+                                    <div class="market-result-source">${escapeHtml(row.website || "Site non détecté")}</div>
+                                  </div>
+                                  <div>
+                                    <div>${escapeHtml(row.title || "Offre détectée")}</div>
+                                    <div class="market-result-source">${escapeHtml(row.location || "Lieu non détecté")}${row.duration ? " · " + escapeHtml(row.duration) : ""}</div>
+                                  </div>
+                                  <div>${escapeHtml(formatMarketPrice(row.price, row.currency))}</div>
+                                  <div>${row.confidence !== null ? `Confiance ${Math.round(row.confidence * 100)}%` : "Confiance non détectée"}</div>
+                                  <div>${renderMarketSourceLink(sourceUrl)}</div>
+                                </div>
+                              `
+                            })
+                            .join("")}
+                        </div>`
+                  }
+                </section>
+              </section>
+            `
+          })
+          .join("")
+      }
+
+      <section class="app-section" data-view="ignored-senders">
       <div class="section-title">
         <h2>Expéditeurs ignorés</h2>
         <span>${ignoredSenders.length} adresse(s)</span>
@@ -821,7 +1726,9 @@ app.get("/", async (_req, res) => {
           }
         </div>
       </section>
+      </section>
 
+      <section class="app-section is-active" data-view="email-management">
       <div class="section-title">
         <h2>Dernières tâches générées</h2>
         <span>${totalTasks} tâche(s) à traiter</span>
@@ -928,10 +1835,398 @@ app.get("/", async (_req, res) => {
               })
               .join("")
       }
+      </section>
     </main>
   </div>
 
   <script>
+    function setActiveView(viewName) {
+      document.querySelectorAll("[data-view]").forEach((section) => {
+        section.classList.toggle("is-active", section.dataset.view === viewName)
+      })
+
+      document.querySelectorAll("[data-target-view]").forEach((button) => {
+        button.classList.toggle("is-active", button.dataset.targetView === viewName)
+      })
+
+      window.location.hash = viewName
+    }
+
+    function setupNavigation() {
+      document.querySelectorAll("[data-target-view]").forEach((button) => {
+        button.addEventListener("click", () => {
+          setActiveView(button.dataset.targetView)
+        })
+      })
+
+      const initialView = window.location.hash.replace("#", "") || "email-management"
+      const allowedViews = Array.from(document.querySelectorAll("[data-target-view]")).map((button) => button.dataset.targetView)
+
+      setActiveView(allowedViews.includes(initialView) ? initialView : "email-management")
+    }
+
+    let birthdaySelectedFiles = []
+
+    function formatFileSize(size) {
+      if (size < 1024) return size + " o"
+      if (size < 1024 * 1024) return Math.round(size / 1024) + " Ko"
+      return (size / 1024 / 1024).toFixed(1) + " Mo"
+    }
+
+    function updateBirthdayFileList() {
+      const list = document.getElementById("birthdayFileList")
+
+      if (!list) return
+
+      if (birthdaySelectedFiles.length === 0) {
+        list.innerHTML = '<div class="subtitle">Aucun fichier sélectionné.</div>'
+        return
+      }
+
+      list.innerHTML = birthdaySelectedFiles
+        .map((file) => {
+          return '<div class="file-pill"><span>' + file.name + '</span><span>' + formatFileSize(file.size) + '</span></div>'
+        })
+        .join("")
+    }
+
+    function setBirthdayFiles(files) {
+      const allowedTypes = ["application/pdf", "image/jpeg", "image/jpg", "image/png"]
+
+      birthdaySelectedFiles = Array.from(files).filter((file) => {
+        return allowedTypes.includes(file.type)
+      })
+
+      updateBirthdayFileList()
+    }
+
+    function setupBirthdayDropzone() {
+      const dropzone = document.getElementById("birthdayDropzone")
+      const input = document.getElementById("birthdayFiles")
+
+      if (!dropzone || !input) return
+
+      updateBirthdayFileList()
+
+      dropzone.addEventListener("click", () => input.click())
+
+      input.addEventListener("change", () => {
+        setBirthdayFiles(input.files || [])
+      })
+
+      ;["dragenter", "dragover"].forEach((eventName) => {
+        dropzone.addEventListener(eventName, (event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          dropzone.classList.add("is-dragging")
+        })
+      })
+
+      ;["dragleave", "drop"].forEach((eventName) => {
+        dropzone.addEventListener(eventName, (event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          dropzone.classList.remove("is-dragging")
+        })
+      })
+
+      dropzone.addEventListener("drop", (event) => {
+        setBirthdayFiles(event.dataTransfer?.files || [])
+      })
+    }
+
+    function readFileAsDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader()
+
+        reader.onload = () => {
+          resolve({
+            name: file.name,
+            mimeType: file.type || "application/octet-stream",
+            dataUrl: String(reader.result || ""),
+          })
+        }
+
+        reader.onerror = () => reject(reader.error)
+        reader.readAsDataURL(file)
+      })
+    }
+
+    function setBirthdayWarnings(warnings) {
+      const warningBox = document.getElementById("birthdayWarnings")
+
+      if (!warningBox) return
+
+      if (!warnings || warnings.length === 0) {
+        warningBox.classList.remove("is-visible")
+        warningBox.innerText = ""
+        return
+      }
+
+      warningBox.innerText = warnings.join("\\n")
+      warningBox.classList.add("is-visible")
+    }
+
+    function fillBirthdayResult(analysis) {
+      const result = document.getElementById("birthdayResult")
+      const title = document.getElementById("birthdayTitle")
+      const date = document.getElementById("birthdayDate")
+      const start = document.getElementById("birthdayStart")
+      const end = document.getElementById("birthdayEnd")
+      const summary = document.getElementById("birthdaySummary")
+      const confirmationDraft = document.getElementById("birthdayConfirmationDraft")
+
+      title.value = "Anniversaire " + (analysis.variantName || "magique") + (analysis.childFirstName ? " - " + analysis.childFirstName : "")
+      date.value = analysis.eventDate || ""
+      start.value = analysis.startTime || ""
+      end.value = analysis.endTime || ""
+      summary.value = analysis.summary || ""
+      confirmationDraft.innerHTML = formatConfirmationDraft(analysis.confirmationDraft || "")
+
+      setBirthdayWarnings(analysis.warnings || [])
+      setBirthdayExtractionDetails(analysis.extractionDetails || null)
+      result.classList.add("is-visible")
+    }
+
+    function resetBirthdayReservation() {
+      const input = document.getElementById("birthdayFiles")
+      const result = document.getElementById("birthdayResult")
+      const extractionDetails = document.getElementById("birthdayExtractionDetails")
+      const fields = [
+        "birthdayTitle",
+        "birthdayDate",
+        "birthdayStart",
+        "birthdayEnd",
+        "birthdaySummary",
+        "birthdayConfirmationDraft",
+      ]
+
+      birthdaySelectedFiles = []
+
+      if (input) {
+        input.value = ""
+      }
+
+      fields.forEach((fieldId) => {
+        const field = document.getElementById(fieldId)
+
+        if (field) {
+          if (field.isContentEditable) {
+            field.innerHTML = ""
+          } else {
+            field.value = ""
+          }
+        }
+      })
+
+      setBirthdayWarnings([])
+
+      if (extractionDetails) {
+        extractionDetails.classList.remove("is-visible")
+        extractionDetails.innerText = ""
+      }
+
+      if (result) {
+        result.classList.remove("is-visible")
+      }
+
+      updateBirthdayFileList()
+    }
+
+    async function copyBirthdayConfirmation() {
+      const draft = document.getElementById("birthdayConfirmationDraft")
+      const button = document.getElementById("copyBirthdayConfirmationButton")
+
+      if (!draft || !button) return
+
+      try {
+        const plainText = draft.innerText
+        const html = draft.innerHTML
+
+        if (window.ClipboardItem) {
+          await navigator.clipboard.write([
+            new ClipboardItem({
+              "text/html": new Blob([html], { type: "text/html" }),
+              "text/plain": new Blob([plainText], { type: "text/plain" }),
+            }),
+          ])
+        } else {
+          await navigator.clipboard.writeText(plainText)
+        }
+
+        button.innerText = "Copié"
+
+        setTimeout(() => {
+          button.innerText = "Copier"
+        }, 1500)
+      } catch (error) {
+        alert("Impossible de copier le brouillon.")
+      }
+    }
+
+    function escapeDraftHtml(text) {
+      return String(text || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;")
+    }
+
+    function formatConfirmationDraft(text) {
+      return escapeDraftHtml(text)
+        .replace(/\\*\\*(.*?)\\*\\*/g, "<strong>$1</strong>")
+        .replace(/\\n/g, "<br>")
+    }
+
+    function setBirthdayExtractionDetails(details) {
+      const box = document.getElementById("birthdayExtractionDetails")
+
+      if (!box || !details) return
+
+      const lines = [
+        "Contrôle extraction :",
+        details.selectedVariantEvidence ? "- Variante : " + details.selectedVariantEvidence : "- Variante : preuve non fournie",
+        details.childrenCountEvidence ? "- Nombre d'enfants : " + details.childrenCountEvidence : "- Nombre d'enfants : preuve non fournie",
+      ]
+
+      if (details.selectedOptionsEvidence && details.selectedOptionsEvidence.length > 0) {
+        lines.push("- Options :")
+        details.selectedOptionsEvidence.forEach((item) => lines.push("  • " + item))
+      } else {
+        lines.push("- Options : aucune preuve d'option cochée fournie")
+      }
+
+      box.innerText = lines.join("\\n")
+      box.classList.add("is-visible")
+    }
+
+    async function analyzeBirthdayReservation() {
+      const loading = document.getElementById("birthdayLoading")
+      const button = document.getElementById("analyzeBirthdayButton")
+
+      if (birthdaySelectedFiles.length === 0) {
+        alert("Ajoutez au moins un fichier PDF ou JPG.")
+        return
+      }
+
+      loading.classList.add("is-visible")
+      button.disabled = true
+
+      try {
+        const files = await Promise.all(birthdaySelectedFiles.map(readFileAsDataUrl))
+        const response = await fetch("/birthday-reservations/analyze", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ files }),
+        })
+
+        const payload = await response.json()
+
+        if (!payload.success) {
+          throw new Error(payload.error || "Analyse impossible")
+        }
+
+        fillBirthdayResult(payload.analysis)
+      } catch (error) {
+        alert(error instanceof Error ? error.message : "Analyse impossible")
+      } finally {
+        loading.classList.remove("is-visible")
+        button.disabled = false
+      }
+    }
+
+    async function runMarketAnalysis(domain, clickedButton) {
+      const loading = document.getElementById("marketAnalysisLoading")
+      const button = clickedButton || document.querySelector('[data-market-domain="' + domain + '"]')
+      const status = document.getElementById("marketAnalysisStatus")
+
+      if (!button) return
+
+      if (status) {
+        status.className = "market-status"
+        status.innerText = ""
+      }
+      loading?.classList.add("is-visible")
+      button.disabled = true
+
+      try {
+        const response = await fetch("/market-analysis/run", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ domain }),
+        })
+
+        const payload = await response.json()
+
+        if (!payload.success) {
+          throw new Error(payload.error || "Analyse impossible")
+        }
+
+        const summary = payload.summary || {}
+        const lines = [
+          "Analyse SPECTRA terminée dans Cosmo IA.",
+          "Domaines scannés : " + (summary.scannedDomains || 0),
+          "Pages analysées : " + (summary.analyzedUrls || 0),
+          "Offres pertinentes : " + (summary.relevantOffers || 0),
+          "Alertes créées : " + (summary.createdAlerts || 0),
+        ]
+
+        if (summary.errors && summary.errors.length > 0) {
+          lines.push("Points à vérifier :")
+          summary.errors.slice(0, 5).forEach((item) => lines.push("- " + item))
+        }
+
+        if (status) {
+          status.innerText = lines.join("\\n") + "\\n\\nActualisation des résultats..."
+          status.classList.add("is-visible", "is-success")
+        }
+
+        if (payload.targetView) {
+          window.location.hash = payload.targetView
+          setTimeout(() => window.location.reload(), 700)
+        }
+      } catch (error) {
+        if (status) {
+          status.innerText = error instanceof Error ? error.message : "Analyse impossible"
+          status.classList.add("is-visible", "is-error")
+        } else {
+          alert(error instanceof Error ? error.message : "Analyse impossible")
+        }
+      } finally {
+        loading?.classList.remove("is-visible")
+        button.disabled = false
+      }
+    }
+
+    setupNavigation()
+    setupBirthdayDropzone()
+    document.getElementById("analyzeBirthdayButton")?.addEventListener("click", analyzeBirthdayReservation)
+    document.getElementById("cancelBirthdayButton")?.addEventListener("click", resetBirthdayReservation)
+    document.getElementById("copyBirthdayConfirmationButton")?.addEventListener("click", copyBirthdayConfirmation)
+    document.querySelectorAll(".market-scan-button").forEach((button) => {
+      button.addEventListener("click", () => runMarketAnalysis(button.dataset.marketDomain, button))
+    })
+    document.querySelectorAll(".market-source-link").forEach((link) => {
+      link.addEventListener("click", (event) => {
+        const url = link.dataset.sourceUrl || link.href
+
+        if (!url) return
+
+        event.preventDefault()
+
+        const opened = window.open(url, "_blank", "noopener,noreferrer")
+
+        if (!opened) {
+          window.location.href = url
+        }
+      })
+    })
+
     async function copyReply(button) {
       const reply = button.nextElementSibling.innerText
 
