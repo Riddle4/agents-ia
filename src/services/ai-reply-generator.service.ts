@@ -257,7 +257,7 @@ Le Centre de Magie de la Côte est situé à Nyon.
 Services proposés :
 - Anniversaires pour enfants
 - Cours de magie collectifs enfants à Genève, Nyon, Morges et Martigny, dès 7 ans
-- Stages de magie : Pâques, vacances d'été, vacances d'automne / Halloween
+- Stages de magie : Pâques, vacances d'été, vacances d'automne / Halloween, pour enfants dès 6 ans
 - Escape Games à Nyon : L'École des Sorciers et La Pierre Philosophale
 - Boutique de magie à Nyon, ouverte sur rendez-vous
 - Cours de magie dans certaines écoles privées de la région : Collège du Léman, Mont-Olivet, École Internationale de Genève et École Moser
@@ -279,6 +279,7 @@ Règles importantes :
 - Si une information manque, poser une question simple et directe.
 - Pour une demande d’anniversaire, demander si nécessaire : âge de l’enfant, nombre d’enfants, date souhaitée, téléphone.
 - Pour une demande d’anniversaire, toujours mentionner le formulaire de réservation en pièce jointe.
+- Pour une demande de stage, ne jamais indiquer un âge minimum de 7 ans : les stages acceptent les enfants dès 6 ans.
 - Pour une animation externe, demander les précisions nécessaires avant de proposer une offre.
 `.trim()
 }

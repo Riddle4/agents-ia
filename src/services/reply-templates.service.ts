@@ -82,6 +82,8 @@ Le Centre de Magie de la Côte propose des stages de magie pendant les vacances 
 - été
 - automne / Halloween
 
+Les stages sont ouverts aux enfants dès 6 ans.
+
 Si le client souhaite inscrire un enfant, répondre chaleureusement et mentionner le formulaire d’inscription au stage correspondant.
 `.trim()
 
