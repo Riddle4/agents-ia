@@ -26,6 +26,7 @@ export type UploadedReservationFile = {
 
 export type BirthdayReservationAnalysis = {
   variantName: string | null
+  customerPhone: string | null
   childFirstName: string | null
   childAge: string | null
   childrenCount: number | null
@@ -53,6 +54,7 @@ export type BirthdayReservationAnalysis = {
 
 type ExtractedBirthdayReservation = {
   variantName: string | null
+  customerPhone: string | null
   childFirstName: string | null
   childAge: string | null
   childrenCount: number | null
@@ -130,6 +132,7 @@ function normalizeExtraction(raw: any): ExtractedBirthdayReservation {
 
   return {
     variantName: typeof raw?.variantName === "string" ? raw.variantName : null,
+    customerPhone: typeof raw?.customerPhone === "string" ? raw.customerPhone : null,
     childFirstName: typeof raw?.childFirstName === "string" ? raw.childFirstName : null,
     childAge: typeof raw?.childAge === "string" ? raw.childAge : null,
     childrenCount: typeof raw?.childrenCount === "number" ? raw.childrenCount : null,
@@ -224,6 +227,7 @@ function calculateReservation(extraction: ExtractedBirthdayReservation): Birthda
   const priceCalculation = `${calculationParts.join(" ")} Total calculé : CHF ${totalPrice}.`
 
   const variantName = extraction.variantName ?? "à vérifier"
+  const customerPhone = extraction.customerPhone ?? "à vérifier"
   const childFirstName = extraction.childFirstName ?? "à vérifier"
   const childAge = extraction.childAge ?? "à vérifier"
   const childrenCount = extraction.childrenCount ?? "à vérifier"
@@ -241,6 +245,7 @@ function calculateReservation(extraction: ExtractedBirthdayReservation): Birthda
 
   return {
     variantName: extraction.variantName,
+    customerPhone: extraction.customerPhone,
     childFirstName: extraction.childFirstName,
     childAge: extraction.childAge,
     childrenCount: extraction.childrenCount,
@@ -251,7 +256,7 @@ function calculateReservation(extraction: ExtractedBirthdayReservation): Birthda
     options: calculatedOptions,
     totalPrice,
     priceCalculation,
-    summary: `anniversaire ${variantName}, enfant ${childFirstName}, âge ${childAge}, options ${optionsText}, nombre d'enfants ${childrenCount}, prix total CHF ${totalPrice} (${priceCalculation})`,
+    summary: `anniversaire ${variantName}, téléphone client ${customerPhone}, enfant ${childFirstName}, âge ${childAge}, options ${optionsText}, nombre d'enfants ${childrenCount}, prix total CHF ${totalPrice} (${priceCalculation})`,
     confirmationDraft,
     warnings,
     extractionDetails: {
@@ -412,6 +417,7 @@ Retourne uniquement un JSON STRICT :
 {
   "variantName": "nom de la variante choisie",
   "selectedVariantEvidence": "description courte de la case cochée et de sa position",
+  "customerPhone": "téléphone du client ou parent, avec indicatif si visible",
   "childFirstName": "prénom de l'enfant",
   "childAge": "âge de l'enfant",
   "childrenCount": 12,
