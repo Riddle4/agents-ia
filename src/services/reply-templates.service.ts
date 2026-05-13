@@ -13,7 +13,7 @@ export function getBusinessTemplate(type: RequestType, input: TemplateInput) {
       return `
 Bonjour${name},
 
-Nous vous remercions pour votre message et pour l’intérêt porté à notre Univers magique.
+Merci beaucoup pour votre message et pour l’intérêt porté à notre univers magique.
 
 Nous serions ravis d’organiser l’anniversaire de votre enfant au Centre de Magie de la Côte à Nyon.
 
@@ -39,7 +39,7 @@ Toujours préciser que le message ne constitue pas une réservation.
       return `
 Bonjour${name},
 
-Nous vous remercions pour votre message.
+Merci beaucoup pour votre message.
 
 Nous proposons pour les entreprises un atelier de magie spécialement conçu pour les team buildings, alliant convivialité, collaboration et découverte.
 
@@ -56,7 +56,7 @@ L’expérience peut être adaptée selon les besoins du client : durée, format
       return `
 Bonjour${name},
 
-Nous vous remercions pour votre message et pour l’intérêt porté à nos animations.
+Merci beaucoup pour votre message et pour l’intérêt porté à nos animations.
 
 Avant de proposer une offre, demandez les informations manquantes :
 - type d’animation souhaitée : close-up, spectacle, atelier
@@ -75,7 +75,7 @@ Ne pas proposer un magicien précis sans information suffisante.
       return `
 Bonjour${name},
 
-Nous vous remercions pour votre message.
+Merci beaucoup pour votre message.
 
 Le Centre de Magie de la Côte propose des stages de magie pendant les vacances scolaires :
 - Pâques
@@ -91,7 +91,7 @@ Si le client souhaite inscrire un enfant, répondre chaleureusement et mentionne
       return `
 Bonjour${name},
 
-Nous vous remercions pour votre message.
+Merci beaucoup pour votre message.
 
 Nous proposons des cours collectifs de magie pour enfants dès 7 ans, pour tous niveaux, à Genève, Nyon, Morges et Martigny.
 
@@ -102,7 +102,7 @@ Si le client demande une inscription, mentionner le formulaire d’inscription a
       return `
 Bonjour${name},
 
-Nous vous remercions pour votre message.
+Merci beaucoup pour votre message.
 
 Nous proposons deux Escape Games à Nyon :
 - L’École des Sorciers
@@ -115,7 +115,7 @@ Adapter la réponse selon que la demande concerne une réservation, un anniversa
       return `
 Bonjour${name},
 
-Nous vous remercions pour votre message.
+Merci beaucoup pour votre message.
 
 Nous proposons des Soirées Magiques Privées pour adultes ou familles, avec privatisation de nos locaux, accueil, apéritif et spectacle exclusif dans notre petit théâtre.
 
@@ -126,7 +126,7 @@ case "ANIMATION_DOMICILE_SIMPLE":
   return `
 Bonjour,
 
-Nous vous remercions pour votre message.
+Merci beaucoup pour votre message.
 
 Pour une animation de magie à domicile d’environ 1 heure, il faut compter CHF 450.-.
 
@@ -140,7 +140,7 @@ Rester simple, direct et professionnel.
       return `
 Bonjour${name},
 
-Nous vous remercions pour votre message.
+Merci beaucoup pour votre message.
 
 Notre boutique de magie à Nyon est ouverte sur rendez-vous.
 
@@ -151,9 +151,9 @@ Inviter le client à proposer un moment de passage ou à préciser ce qu’il re
       return `
 Bonjour${name},
 
-Nous vous remercions pour votre message.
+Merci beaucoup pour votre message.
 
-Répondre de manière chaleureuse, claire et professionnelle. Si la demande est incomplète, poser une question simple pour pouvoir orienter correctement le client.
+Répondre de manière chaleureuse, claire et naturelle. Si la demande est incomplète, poser une question simple pour pouvoir orienter correctement le client.
 `.trim()
   }
 }

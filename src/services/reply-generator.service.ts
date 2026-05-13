@@ -45,10 +45,9 @@ Afin de vous répondre précisément, pourriez-vous me confirmer :
 
 Je pourrai ensuite vous indiquer les possibilités et vous transmettre les informations adaptées.
 
-Belle journée,
+Salutations magiques 💫
 
-Laurent
-Centre de Magie de la Côte
+L’Equipe du Centre de Magie de la Côte
   `.trim()
 }
 
@@ -68,10 +67,9 @@ Afin de préparer une réponse précise, pourriez-vous me préciser :
 
 Je pourrai ensuite revenir vers vous avec les informations et tarifs correspondants.
 
-Belle journée,
+Salutations magiques 💫
 
-Laurent
-Centre de Magie de la Côte
+L’Equipe du Centre de Magie de la Côte
   `.trim()
 }
 
@@ -91,10 +89,9 @@ Pour vous orienter au mieux, pourriez-vous me préciser :
 
 Je reviendrai ensuite vers vous avec les possibilités adaptées.
 
-Belle journée,
+Salutations magiques 💫
 
-Laurent
-Centre de Magie de la Côte
+L’Equipe du Centre de Magie de la Côte
   `.trim()
 }
 
@@ -110,10 +107,9 @@ Pouvez-vous, si possible, me transmettre quelques précisions complémentaires a
 
 Je reviens vers vous dès que possible.
 
-Belle journée,
+Salutations magiques 💫
 
-Laurent
-Centre de Magie de la Côte
+L’Equipe du Centre de Magie de la Côte
   `.trim()
 }
 
@@ -133,10 +129,9 @@ Pourriez-vous me confirmer :
 
 Je pourrai ensuite vous indiquer les options possibles.
 
-Belle journée,
+Salutations magiques 💫
 
-Laurent
-Centre de Magie de la Côte
+L’Equipe du Centre de Magie de la Côte
   `.trim()
 }
 
@@ -148,9 +143,8 @@ Merci beaucoup pour votre message.
 
 Je l’ai bien reçu et je vais revenir vers vous dès que possible avec les informations nécessaires.
 
-Belle journée,
+Salutations magiques 💫
 
-Laurent
-Centre de Magie de la Côte
+L’Equipe du Centre de Magie de la Côte
   `.trim()
 }

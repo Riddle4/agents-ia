@@ -60,6 +60,22 @@ Adresse email de la boite `GMAIL_MAGIELACOTE`.
 
 Mot de passe d'application Gmail pour la boite `GMAIL_MAGIELACOTE`.
 
+### `EMAIL_BATCH_SIZE`
+
+Nombre maximum d'emails non lus traites par boite Gmail a chaque cycle du worker.
+
+Valeur par defaut :
+
+```text
+5
+```
+
+Exemple :
+
+```text
+EMAIL_BATCH_SIZE="10"
+```
+
 ## Google Calendar
 
 ### `GOOGLE_CLIENT_ID`
@@ -81,7 +97,7 @@ Refresh token OAuth permettant d'interroger Google Calendar sans reconnexion man
 Le scope utilise est :
 
 ```text
-https://www.googleapis.com/auth/calendar.readonly
+https://www.googleapis.com/auth/calendar
 ```
 
 ## Dashboard
@@ -115,6 +131,7 @@ GMAIL_INFO_USER="info@example.com"
 GMAIL_INFO_APP_PASSWORD="xxxx xxxx xxxx xxxx"
 GMAIL_MAGIELACOTE_USER="contact@example.com"
 GMAIL_MAGIELACOTE_APP_PASSWORD="xxxx xxxx xxxx xxxx"
+EMAIL_BATCH_SIZE="5"
 
 GOOGLE_CLIENT_ID="..."
 GOOGLE_CLIENT_SECRET="..."

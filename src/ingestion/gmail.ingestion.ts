@@ -22,17 +22,31 @@ const inboxes: GmailInboxConfig[] = [
   },
 ]
 
+const DEFAULT_EMAIL_BATCH_SIZE = 5
+
+function getEmailBatchSize() {
+  const value = Number(process.env.EMAIL_BATCH_SIZE || DEFAULT_EMAIL_BATCH_SIZE)
+
+  if (!Number.isInteger(value) || value < 1) {
+    return DEFAULT_EMAIL_BATCH_SIZE
+  }
+
+  return value
+}
+
 export async function ingestGmailInboxes() {
   const orchestrator = new Orchestrator()
+  const batchSize = getEmailBatchSize()
 
   for (const inbox of inboxes) {
-    await ingestSingleInbox(inbox, orchestrator)
+    await ingestSingleInbox(inbox, orchestrator, batchSize)
   }
 }
 
 async function ingestSingleInbox(
   inbox: GmailInboxConfig,
-  orchestrator: Orchestrator
+  orchestrator: Orchestrator,
+  batchSize: number
 ) {
   if (!inbox.user || !inbox.appPassword) {
     console.log(`⚠️ Configuration manquante pour ${inbox.name}`)
@@ -65,8 +79,9 @@ async function ingestSingleInbox(
       })
 
       console.log(`Emails non lus trouvés : ${messages.length}`)
+      console.log(`Limite de traitement pour ce cycle : ${batchSize}`)
 
-      for (const uid of messages.slice(0, 5)) {
+      for (const uid of messages.slice(0, batchSize)) {
         const message = await client.fetchOne(uid, {
           source: true,
           envelope: true,

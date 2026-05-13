@@ -124,6 +124,7 @@ npx prisma generate
 - Les appels OpenAI necessitent `OPENAI_API_KEY`.
 - Les disponibilites necessitent un refresh token Google valide.
 - Le worker marque les emails comme lus apres traitement reussi.
+- Le worker traite au maximum `EMAIL_BATCH_SIZE` emails non lus par boite Gmail et par cycle. La valeur par defaut est `5`.
 - Les reponses sont des suggestions : aucune reponse n'est envoyee automatiquement.
 - Les emails sont dedoublonnes par couple `source` + `externalId`.
 - La creation d'evenements anniversaire dans Google Calendar necessite un `GOOGLE_REFRESH_TOKEN` genere avec le scope `https://www.googleapis.com/auth/calendar`.
