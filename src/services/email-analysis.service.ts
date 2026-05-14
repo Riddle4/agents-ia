@@ -349,7 +349,7 @@ export async function analyzeEmail(input: AnalyzeEmailInput): Promise<EmailAnaly
   }
 
   const response = await client.responses.create({
-    model: "gpt-4.1-mini",
+    model: process.env.ECHO_ANALYSIS_MODEL || "gpt-5",
     input: `
 Tu analyses un email client pour le Centre de Magie de la Côte à Nyon.
 

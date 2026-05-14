@@ -383,7 +383,7 @@ ${input.text.slice(0, 8000)}
 `
 
   const response = await openai.chat.completions.create({
-    model: process.env.MARKET_ANALYSIS_MODEL || "gpt-4o-mini",
+    model: process.env.MARKET_ANALYSIS_MODEL || "gpt-5",
     temperature: 0.2,
     messages: [
       {

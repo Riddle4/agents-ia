@@ -309,7 +309,7 @@ export async function generateAIReply(input: GenerateAIReplyInput) {
   const humanProvidedInfoContext = buildHumanProvidedInfoContext(input.aiContext)
 
   const response = await client.responses.create({
-    model: "gpt-4.1-mini",
+    model: process.env.ECHO_REPLY_MODEL || "gpt-5",
     input: `
 Tu es le Centre de Magie de la Côte à Nyon.
 

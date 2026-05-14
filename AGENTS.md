@@ -324,7 +324,7 @@ Flux :
 7. l'humain clique sur `Approuver et ajouter l'événement` ;
 8. `/birthday-reservations/add-event` ajoute l'evenement dans Google Calendar avec le resume valide.
 
-Le modele par defaut pour cette analyse est `process.env.BIRTHDAY_ANALYSIS_MODEL || "gpt-5.5"`. Si l'API n'a pas acces a `gpt-5.5`, configurer `BIRTHDAY_ANALYSIS_MODEL` avec un modele vision fort disponible.
+Le modele par defaut pour cette analyse est `process.env.BIRTHDAY_ANALYSIS_MODEL || "gpt-5"`. Si l'API n'a pas acces a `gpt-5`, configurer `BIRTHDAY_ANALYSIS_MODEL` avec un modele vision fort disponible.
 
 ## Documentation
 

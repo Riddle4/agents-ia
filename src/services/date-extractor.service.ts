@@ -24,7 +24,7 @@ export async function extractDateRangeFromText(text: string) {
   }
 
   const response = await client.responses.create({
-    model: "gpt-4.1-mini",
+    model: process.env.ECHO_DATE_MODEL || "gpt-5",
     input: `
 Tu es un expert en extraction de dates.
 

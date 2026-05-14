@@ -28,6 +28,36 @@ Cle API OpenAI utilisee pour :
 
 Sans cette variable, la generation de reponse echoue.
 
+### `ECHO_REPLY_MODEL`
+
+Modele OpenAI utilise pour generer les brouillons de reponses email Echo.
+
+Valeur par defaut :
+
+```text
+gpt-5
+```
+
+### `ECHO_ANALYSIS_MODEL`
+
+Modele OpenAI utilise pour analyser les emails entrants.
+
+Valeur par defaut :
+
+```text
+gpt-5
+```
+
+### `ECHO_DATE_MODEL`
+
+Modele OpenAI utilise pour extraire les dates depuis les emails.
+
+Valeur par defaut :
+
+```text
+gpt-5
+```
+
 ### `BIRTHDAY_ANALYSIS_MODEL`
 
 Modele OpenAI utilise pour lire les formulaires d'anniversaire PDF/JPG et detecter les cases cochees.
@@ -35,10 +65,20 @@ Modele OpenAI utilise pour lire les formulaires d'anniversaire PDF/JPG et detect
 Valeur recommandee :
 
 ```text
-gpt-5.5
+gpt-5
 ```
 
-Si votre compte API n'a pas acces a ce modele, utilisez un modele vision plus puissant disponible sur votre compte.
+Si votre compte API n'a pas acces a ce modele, utilisez un modele vision puissant disponible sur votre compte.
+
+### `MARKET_ANALYSIS_MODEL`
+
+Modele OpenAI utilise pour extraire les offres marche depuis les pages concurrentes.
+
+Valeur par defaut :
+
+```text
+gpt-5
+```
 
 ## Gmail
 

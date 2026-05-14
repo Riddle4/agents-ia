@@ -448,7 +448,7 @@ Retourne uniquement un JSON STRICT :
   ]
 
   const response = await client.responses.create({
-    model: process.env.BIRTHDAY_ANALYSIS_MODEL || "gpt-5.5",
+    model: process.env.BIRTHDAY_ANALYSIS_MODEL || "gpt-5",
     input: [
       {
         role: "user",

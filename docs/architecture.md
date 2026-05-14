@@ -130,7 +130,7 @@ L'analyse de tache est basee sur des mots-cles. Elle peut produire notamment :
 
 Fichier : `src/services/ai-reply-generator.service.ts`
 
-La generation utilise OpenAI avec le modele `gpt-4.1-mini`.
+La generation utilise OpenAI avec le modele `process.env.ECHO_REPLY_MODEL || "gpt-5"`.
 
 Avant la generation, le systeme peut recevoir une analyse structuree produite par `src/services/email-analysis.service.ts`. Cette analyse indique le type de demande, le lieu, le mode de reponse attendu, les informations client manquantes et les informations internes a demander a un humain.
 
