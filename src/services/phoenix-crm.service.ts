@@ -27,6 +27,8 @@ export const PHOENIX_FIELDS = [
   "parentLastName",
   "email",
   "phone",
+  "address",
+  "magicLevel",
   "organizationName",
   "service",
   "bookingDate",
@@ -49,6 +51,8 @@ type NormalizedRow = {
   parentLastName?: string
   email?: string
   phone?: string
+  address?: string
+  magicLevel?: string
   organizationName?: string
   service?: string
   bookingDate?: Date | null
@@ -275,14 +279,14 @@ export async function generateOpportunityMessage(opportunityId: string, channel:
   })
 }
 
-export async function createManualPerson(data: { type: string; firstName?: string; lastName?: string; email?: string; phone?: string; notes?: string }) {
+export async function createManualPerson(data: { type: string; firstName?: string; lastName?: string; email?: string; phone?: string; address?: string; magicLevel?: string; notes?: string }) {
   const normalizedEmail = normalizeEmail(data.email)
   const normalizedPhone = normalizePhone(data.phone)
-  const family = data.type === "CHILD" || data.type === "PARENT" ? await findOrCreateFamily(data.lastName, data.email, data.phone) : null
+  const family = data.type === "CHILD" || data.type === "PARENT" ? await findOrCreateFamily(data.lastName, data.email, data.phone, data.address) : null
   return prisma.phoenixPerson.create({ data: { ...data, normalizedEmail, normalizedPhone, familyId: family?.id } })
 }
 
-export async function createManualOrganization(data: { name: string; email?: string; phone?: string; website?: string; type?: string; notes?: string }) {
+export async function createManualOrganization(data: { name: string; email?: string; phone?: string; address?: string; website?: string; type?: string; notes?: string }) {
   return prisma.phoenixOrganization.create({ data })
 }
 
@@ -302,13 +306,13 @@ async function importNormalizedRow(row: NormalizedRow, importType: string, batch
   }
 
   if (row.childFirstName || row.childLastName || (!organization && row.email)) {
-    family = await findOrCreateFamily(row.childLastName || row.parentLastName, row.email, row.phone)
-    child = row.childFirstName || row.childLastName ? await findOrCreatePerson("CHILD", row.childFirstName, row.childLastName, row.email, row.phone, family.id, null, row.childBirthDate) : null
-    parent = row.parentFirstName || row.parentLastName || row.email ? await findOrCreatePerson("PARENT", row.parentFirstName, row.parentLastName || row.childLastName, row.email, row.phone, family.id, null, null) : null
+    family = await findOrCreateFamily(row.childLastName || row.parentLastName, row.email, row.phone, row.address)
+    child = row.childFirstName || row.childLastName ? await findOrCreatePerson("CHILD", row.childFirstName, row.childLastName, row.email, row.phone, family.id, null, row.childBirthDate, row.address, row.magicLevel) : null
+    parent = row.parentFirstName || row.parentLastName || row.email ? await findOrCreatePerson("PARENT", row.parentFirstName, row.parentLastName || row.childLastName, row.email, row.phone, family.id, null, null, row.address) : null
   }
 
   if (organization && row.email) {
-    await findOrCreatePerson("CONTACT", row.parentFirstName, row.parentLastName, row.email, row.phone, null, organization.id, null)
+    await findOrCreatePerson("CONTACT", row.parentFirstName, row.parentLastName, row.email, row.phone, null, organization.id, null, row.address)
   }
 
   const existingBooking = await prisma.phoenixBooking.findFirst({
@@ -365,21 +369,21 @@ async function resolveService(rawService: string | undefined, importType: string
   return prisma.phoenixService.findUniqueOrThrow({ where: { code } })
 }
 
-async function findOrCreateFamily(lastName?: string, email?: string, phone?: string) {
+async function findOrCreateFamily(lastName?: string, email?: string, phone?: string, address?: string) {
   const name = lastName ? `Famille ${toTitleCase(lastName)}` : email ? `Famille ${email}` : "Famille sans nom"
   const existing = email ? await prisma.phoenixFamily.findFirst({ where: { email: normalizeEmail(email) || email } }) : null
   if (existing) return existing
-  return prisma.phoenixFamily.create({ data: { name, email: normalizeEmail(email), phone: normalizePhone(phone) } })
+  return prisma.phoenixFamily.create({ data: { name, email: normalizeEmail(email), phone: normalizePhone(phone), address: cleanText(address) } })
 }
 
 async function findOrCreateOrganization(name: string, row: NormalizedRow) {
   const cleanedName = cleanText(name) || "Organisation sans nom"
   const existing = await prisma.phoenixOrganization.findFirst({ where: { name: { equals: cleanedName, mode: "insensitive" } } })
   if (existing) return existing
-  return prisma.phoenixOrganization.create({ data: { name: cleanedName, email: normalizeEmail(row.email), phone: normalizePhone(row.phone), type: "Institution" } })
+  return prisma.phoenixOrganization.create({ data: { name: cleanedName, email: normalizeEmail(row.email), phone: normalizePhone(row.phone), address: cleanText(row.address), type: "Institution" } })
 }
 
-async function findOrCreatePerson(type: string, firstName?: string, lastName?: string, email?: string, phone?: string, familyId?: string | null, organizationId?: string | null, birthDate?: Date | null) {
+async function findOrCreatePerson(type: string, firstName?: string, lastName?: string, email?: string, phone?: string, familyId?: string | null, organizationId?: string | null, birthDate?: Date | null, address?: string, magicLevel?: string) {
   const normalizedEmail = normalizeEmail(email)
   const normalizedPhone = normalizePhone(phone)
   const existing = await prisma.phoenixPerson.findFirst({
@@ -394,7 +398,7 @@ async function findOrCreatePerson(type: string, firstName?: string, lastName?: s
   })
   if (existing) return existing
   return prisma.phoenixPerson.create({
-    data: { type, firstName: cleanText(firstName), lastName: cleanText(lastName), email: normalizedEmail, phone: normalizedPhone, normalizedEmail, normalizedPhone, familyId: familyId || undefined, organizationId: organizationId || undefined, birthDate: birthDate || undefined },
+    data: { type, firstName: cleanText(firstName), lastName: cleanText(lastName), email: normalizedEmail, phone: normalizedPhone, address: cleanText(address), magicLevel: cleanText(magicLevel), normalizedEmail, normalizedPhone, familyId: familyId || undefined, organizationId: organizationId || undefined, birthDate: birthDate || undefined },
   })
 }
 
@@ -409,6 +413,8 @@ function suggestMapping(headers: string[]) {
     else if (/\b(nom|last name|lastname|surname)\b.*(parent|contact)|(parent|contact).*\b(nom|last name|lastname|surname)\b|famille/.test(normalized)) mapping.parentLastName = header
     else if (/mail|email|courriel/.test(normalized)) mapping.email = header
     else if (/tel|phone|portable|mobile/.test(normalized)) mapping.phone = header
+    else if (/adresse|address|rue|street/.test(normalized)) mapping.address = header
+    else if (/niveau|level|magie|magic/.test(normalized)) mapping.magicLevel = header
     else if (/organisation|entreprise|ecole|institution|societe/.test(normalized)) mapping.organizationName = header
     else if (/service|prestation|activite|formule/.test(normalized)) mapping.service = header
     else if (/date/.test(normalized)) mapping.bookingDate = header
@@ -428,6 +434,8 @@ function normalizeRow(row: Record<string, string>, mapping: Mapping): Normalized
     parentLastName: value("parentLastName"),
     email: normalizeEmail(value("email")),
     phone: normalizePhone(value("phone")),
+    address: value("address"),
+    magicLevel: value("magicLevel"),
     organizationName: value("organizationName"),
     service: value("service"),
     bookingDate: parseDate(value("bookingDate")),

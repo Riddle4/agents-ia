@@ -173,6 +173,7 @@ model PhoenixFamily {
   name      String
   email     String?
   phone     String?
+  address   String?
   notes     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -190,6 +191,8 @@ model PhoenixPerson {
   email           String?
   phone           String?
   birthDate       DateTime?
+  address         String?
+  magicLevel      String?
   normalizedEmail String?
   normalizedPhone String?
   familyId        String?
@@ -214,6 +217,7 @@ model PhoenixOrganization {
   name      String
   email     String?
   phone     String?
+  address   String?
   website   String?
   type      String?
   notes     String?

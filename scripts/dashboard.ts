@@ -453,6 +453,8 @@ function renderPhoenixImportPreviewPage(params: { batch: any; headers: string[];
     parentLastName: "Nom parent/contact",
     email: "E-mail",
     phone: "Téléphone",
+    address: "Adresse du client",
+    magicLevel: "Niveau de magie",
     organizationName: "Organisation",
     service: "Service",
     bookingDate: "Date prestation",
@@ -682,6 +684,8 @@ app.get("/phoenix/clients", async (_req, res) => {
             <label>Nom<input name="lastName" /></label>
             <label>E-mail<input name="email" type="email" /></label>
             <label>Téléphone<input name="phone" /></label>
+            <label>Adresse du client<input name="address" /></label>
+            <label>Niveau de magie<input name="magicLevel" placeholder="Débutant, intermédiaire..." /></label>
             <label class="full">Notes<textarea name="notes"></textarea></label>
           </div>
           <div class="actions" style="margin-top:16px;"><button type="submit">Ajouter</button></div>
@@ -691,7 +695,7 @@ app.get("/phoenix/clients", async (_req, res) => {
         <table><thead><tr><th>Personne</th><th>Contact</th><th>Liens</th><th>Modifier</th></tr></thead><tbody>
           ${people.map((person) => `<tr>
             <td><span class="badge">${escapeHtml(person.type)}</span><br /><strong>${escapeHtml([person.firstName, person.lastName].filter(Boolean).join(" ") || "Sans nom")}</strong></td>
-            <td>${escapeHtml(person.email || "")}<br /><span class="muted">${escapeHtml(person.phone || "")}</span></td>
+            <td>${escapeHtml(person.email || "")}<br /><span class="muted">${escapeHtml([person.phone, person.address, person.magicLevel ? `Niveau: ${person.magicLevel}` : ""].filter(Boolean).join(" · "))}</span></td>
             <td>${escapeHtml(person.family?.name || person.organization?.name || "")}</td>
             <td>
               <form method="post" action="/phoenix/people/${person.id}" class="form-grid">
@@ -699,6 +703,8 @@ app.get("/phoenix/clients", async (_req, res) => {
                 <input name="lastName" value="${escapeHtml(person.lastName || "")}" />
                 <input name="email" value="${escapeHtml(person.email || "")}" />
                 <input name="phone" value="${escapeHtml(person.phone || "")}" />
+                <input name="address" value="${escapeHtml(person.address || "")}" />
+                <input name="magicLevel" value="${escapeHtml(person.magicLevel || "")}" />
                 <textarea class="full" name="notes">${escapeHtml(person.notes || "")}</textarea>
                 <button class="full" type="submit">Enregistrer</button>
               </form>
@@ -722,7 +728,7 @@ app.get("/phoenix/children", async (_req, res) => {
     title: "Enfants",
     subtitle: "Vue centrée sur le parcours idéal : cours, stages, anniversaire et escape games.",
     body: `<div class="panel"><table><thead><tr><th>Enfant</th><th>Famille</th><th>Historique</th></tr></thead><tbody>${children.map((child) => `
-      <tr><td><strong>${escapeHtml([child.firstName, child.lastName].filter(Boolean).join(" ") || "Sans nom")}</strong><br /><span class="muted">${formatDate(child.birthDate)}</span></td><td>${escapeHtml(child.family?.name || "")}</td><td>${child.childBookings.map((booking) => `<span class="badge">${escapeHtml(booking.service.name)}</span>`).join(" ") || "Aucune prestation"}</td></tr>
+      <tr><td><strong>${escapeHtml([child.firstName, child.lastName].filter(Boolean).join(" ") || "Sans nom")}</strong><br /><span class="muted">${formatDate(child.birthDate)}${child.magicLevel ? " · Niveau: " + escapeHtml(child.magicLevel) : ""}</span></td><td>${escapeHtml(child.family?.name || "")}<br /><span class="muted">${escapeHtml(child.address || child.family?.address || "")}</span></td><td>${child.childBookings.map((booking) => `<span class="badge">${escapeHtml(booking.service.name)}</span>`).join(" ") || "Aucune prestation"}</td></tr>
     `).join("")}</tbody></table></div>`,
   }))
 })
@@ -734,6 +740,8 @@ app.post("/phoenix/people", async (req, res) => {
     lastName: String(req.body.lastName || ""),
     email: String(req.body.email || ""),
     phone: String(req.body.phone || ""),
+    address: String(req.body.address || ""),
+    magicLevel: String(req.body.magicLevel || ""),
     notes: String(req.body.notes || ""),
   })
   res.redirect("/phoenix/clients")
@@ -747,6 +755,8 @@ app.post("/phoenix/people/:id", async (req, res) => {
       lastName: String(req.body.lastName || "") || null,
       email: normalizeDashboardEmail(req.body.email),
       phone: normalizeDashboardPhone(req.body.phone),
+      address: String(req.body.address || "") || null,
+      magicLevel: String(req.body.magicLevel || "") || null,
       normalizedEmail: normalizeDashboardEmail(req.body.email),
       normalizedPhone: normalizeDashboardPhone(req.body.phone),
       notes: String(req.body.notes || "") || null,
@@ -770,7 +780,7 @@ app.get("/phoenix/families", async (_req, res) => {
     title: "Familles",
     subtitle: "Détective regroupe les personnes par e-mail, téléphone et nom de famille.",
     body: `<div class="panel"><table><thead><tr><th>Famille</th><th>Membres</th><th>Prestations</th><th>Potentiel</th></tr></thead><tbody>${families.map((family) => `
-      <tr><td><strong>${escapeHtml(family.name)}</strong><br /><span class="muted">${escapeHtml(family.email || family.phone || "")}</span></td><td>${family.people.map((person) => escapeHtml([person.firstName, person.lastName].filter(Boolean).join(" ") || person.type)).join("<br />")}</td><td>${family.bookings.map((booking) => `<span class="badge">${escapeHtml(booking.service.name)}</span>`).join(" ")}</td><td>${formatCurrency(family.opportunities.filter((item) => item.status === "OPEN").reduce((sum, item) => sum + item.estimatedRevenue, 0))}</td></tr>
+      <tr><td><strong>${escapeHtml(family.name)}</strong><br /><span class="muted">${escapeHtml([family.email, family.phone, family.address].filter(Boolean).join(" · "))}</span></td><td>${family.people.map((person) => escapeHtml([person.firstName, person.lastName, person.magicLevel ? `(${person.magicLevel})` : ""].filter(Boolean).join(" ") || person.type)).join("<br />")}</td><td>${family.bookings.map((booking) => `<span class="badge">${escapeHtml(booking.service.name)}</span>`).join(" ")}</td><td>${formatCurrency(family.opportunities.filter((item) => item.status === "OPEN").reduce((sum, item) => sum + item.estimatedRevenue, 0))}</td></tr>
     `).join("")}</tbody></table></div>`,
   }))
 })
@@ -793,6 +803,7 @@ app.get("/phoenix/organizations", async (_req, res) => {
             <label>Type<input name="type" placeholder="Entreprise, école, institution..." /></label>
             <label>E-mail<input name="email" type="email" /></label>
             <label>Téléphone<input name="phone" /></label>
+            <label class="full">Adresse<input name="address" /></label>
             <label>Site web<input name="website" /></label>
             <label class="full">Notes<textarea name="notes"></textarea></label>
           </div>
@@ -801,7 +812,7 @@ app.get("/phoenix/organizations", async (_req, res) => {
       </div>
       <div class="panel"><table><thead><tr><th>Organisation</th><th>Historique</th><th>Potentiel</th><th>Modifier</th></tr></thead><tbody>${organizations.map((organization) => `
         <tr>
-          <td><strong>${escapeHtml(organization.name)}</strong><br /><span class="muted">${escapeHtml([organization.type, organization.email, organization.phone].filter(Boolean).join(" · "))}</span></td>
+          <td><strong>${escapeHtml(organization.name)}</strong><br /><span class="muted">${escapeHtml([organization.type, organization.email, organization.phone, organization.address].filter(Boolean).join(" · "))}</span></td>
           <td>${organization.bookings.map((booking) => `<span class="badge">${escapeHtml(booking.service.name)}</span>`).join(" ") || "Aucun historique"}</td>
           <td>${formatCurrency(organization.opportunities.filter((item) => item.status === "OPEN").reduce((sum, item) => sum + item.estimatedRevenue, 0))}</td>
           <td>
@@ -810,6 +821,7 @@ app.get("/phoenix/organizations", async (_req, res) => {
               <input name="type" value="${escapeHtml(organization.type || "")}" />
               <input name="email" value="${escapeHtml(organization.email || "")}" />
               <input name="phone" value="${escapeHtml(organization.phone || "")}" />
+              <input class="full" name="address" value="${escapeHtml(organization.address || "")}" />
               <input class="full" name="website" value="${escapeHtml(organization.website || "")}" />
               <textarea class="full" name="notes">${escapeHtml(organization.notes || "")}</textarea>
               <button class="full" type="submit">Enregistrer</button>
@@ -826,6 +838,7 @@ app.post("/phoenix/organizations", async (req, res) => {
     name: String(req.body.name || ""),
     email: String(req.body.email || ""),
     phone: String(req.body.phone || ""),
+    address: String(req.body.address || ""),
     website: String(req.body.website || ""),
     type: String(req.body.type || ""),
     notes: String(req.body.notes || ""),
@@ -841,6 +854,7 @@ app.post("/phoenix/organizations/:id", async (req, res) => {
       type: String(req.body.type || "") || null,
       email: normalizeDashboardEmail(req.body.email),
       phone: normalizeDashboardPhone(req.body.phone),
+      address: String(req.body.address || "") || null,
       website: String(req.body.website || "") || null,
       notes: String(req.body.notes || "") || null,
     },
