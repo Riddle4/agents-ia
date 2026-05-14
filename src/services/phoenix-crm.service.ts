@@ -83,16 +83,91 @@ export async function ensurePhoenixServices() {
 
 export async function loadPhoenixDashboard() {
   await ensurePhoenixServices()
-  const [services, people, families, organizations, bookings, opportunities] = await Promise.all([
+  const [services, people, families, organizations, bookings, opportunities, sessions, registrations] = await Promise.all([
     prisma.phoenixService.findMany({ orderBy: { name: "asc" } }),
     prisma.phoenixPerson.findMany({ orderBy: { updatedAt: "desc" }, take: 40, include: { family: true, organization: true } }),
     prisma.phoenixFamily.findMany({ orderBy: { updatedAt: "desc" }, take: 40, include: { people: true } }),
     prisma.phoenixOrganization.findMany({ orderBy: { updatedAt: "desc" }, take: 40 }),
     prisma.phoenixBooking.findMany({ orderBy: { bookingDate: "desc" }, take: 40, include: { service: true, child: true, organization: true } }),
     prisma.phoenixOpportunity.findMany({ orderBy: [{ status: "asc" }, { estimatedRevenue: "desc" }], take: 80, include: { service: true, person: true, family: true, organization: true, messages: { orderBy: { createdAt: "desc" }, take: 1 } } }),
+    prisma.phoenixSession.findMany({ orderBy: { startAt: "asc" }, take: 12, include: { service: true, registrations: true } }),
+    prisma.phoenixRegistration.findMany({ orderBy: { createdAt: "desc" }, take: 12, include: { session: true } }),
   ])
   const totalPotential = opportunities.filter((item) => item.status === "OPEN").reduce((sum, item) => sum + item.estimatedRevenue, 0)
-  return { services, people, families, organizations, bookings, opportunities, totalPotential }
+  return { services, people, families, organizations, bookings, opportunities, sessions, registrations, totalPotential }
+}
+
+export async function ensurePhoenixOperationalData() {
+  await ensurePhoenixServices()
+  const existingActivities = await prisma.phoenixActivity.count()
+
+  if (existingActivities === 0) {
+    const services = await prisma.phoenixService.findMany()
+    for (const service of services) {
+      await prisma.phoenixActivity.upsert({
+        where: { serviceId_name: { serviceId: service.id, name: service.name } },
+        create: {
+          serviceId: service.id,
+          name: service.name,
+          type: activityTypeFromService(service.category),
+          defaultPrice: service.estimatedValue,
+        },
+        update: {
+          type: activityTypeFromService(service.category),
+          defaultPrice: service.estimatedValue,
+        },
+      })
+    }
+  }
+
+  const bookings = await prisma.phoenixBooking.findMany({
+    where: { registrationId: null },
+    include: { service: true, child: true, parent: true, organization: true },
+    orderBy: { createdAt: "asc" },
+  })
+
+  for (const booking of bookings) {
+    const activity = await prisma.phoenixActivity.upsert({
+      where: { serviceId_name: { serviceId: booking.serviceId, name: booking.service.name } },
+      create: {
+        serviceId: booking.serviceId,
+        name: booking.service.name,
+        type: activityTypeFromService(booking.service.category),
+        defaultPrice: booking.service.estimatedValue,
+      },
+      update: {},
+    })
+
+    const session = await findOrCreateSessionFromBooking(booking, activity.id)
+    const registration = await prisma.phoenixRegistration.create({
+      data: {
+        sessionId: session.id,
+        childId: booking.childId || undefined,
+        parentId: booking.parentId || undefined,
+        familyId: booking.familyId || undefined,
+        organizationId: booking.organizationId || undefined,
+        sourceType: booking.sourceType,
+        notes: booking.notes,
+      },
+    })
+
+    const expectedAmount = booking.amount || booking.service.estimatedValue || 0
+    await prisma.phoenixPayment.create({
+      data: {
+        registrationId: registration.id,
+        expectedAmount,
+        paidAmount: inferPaidAmount(booking.notes, expectedAmount),
+        balanceAmount: inferBalanceAmount(booking.notes, expectedAmount),
+        status: inferPaymentStatus(booking.notes, expectedAmount),
+        notes: booking.notes,
+      },
+    })
+
+    await prisma.phoenixBooking.update({
+      where: { id: booking.id },
+      data: { registrationId: registration.id },
+    })
+  }
 }
 
 export function parseExcel(buffer: Buffer): ParsedWorkbook {
@@ -495,4 +570,82 @@ function toTitleCase(value: string) {
 function buildFallbackMessage(targetName: string, serviceName: string, reason: string, channel: string) {
   const greeting = channel === "whatsapp" ? "Bonjour" : `Bonjour ${targetName},`
   return `${greeting}\n\nJe me permets de vous recontacter car ${reason.toLowerCase()}\n\nNous pourrions vous proposer ${serviceName}, avec une formule adaptée à votre situation.\n\nSouhaitez-vous que je vous envoie quelques possibilités ?\n\nSalutations magiques,\nL’Equipe du Centre de Magie de la Côte`
+}
+
+async function findOrCreateSessionFromBooking(booking: any, activityId: string) {
+  const sourceLabel = booking.sourceLabel || booking.service.name
+  const startAt = booking.bookingDate || null
+  const existing = await prisma.phoenixSession.findFirst({
+    where: {
+      serviceId: booking.serviceId,
+      sourceType: booking.sourceType,
+      sourceLabel,
+      startAt,
+    },
+  })
+  if (existing) return existing
+
+  const parsed = parseSessionLabel(sourceLabel)
+  return prisma.phoenixSession.create({
+    data: {
+      activityId,
+      serviceId: booking.serviceId,
+      title: parsed.title || sourceLabel,
+      kind: sessionKindFromBooking(booking.service.category, booking.sourceType),
+      startAt: startAt || undefined,
+      dayOfWeek: parsed.dayOfWeek,
+      timeLabel: parsed.timeLabel,
+      location: parsed.location,
+      level: parsed.level,
+      price: booking.amount || booking.service.estimatedValue || undefined,
+      instructor: parsed.instructor,
+      sourceType: booking.sourceType,
+      sourceLabel,
+      notes: booking.notes,
+    },
+  })
+}
+
+function activityTypeFromService(category: string) {
+  if (category === "COURSE") return "COURSE"
+  if (category === "STAGE") return "STAGE"
+  if (category === "BIRTHDAY") return "BIRTHDAY"
+  if (category === "ESCAPE") return "ESCAPE"
+  return "ANIMATION"
+}
+
+function sessionKindFromBooking(category: string, sourceType?: string) {
+  if (sourceType?.includes("animation")) return category === "BIRTHDAY" ? "BIRTHDAY" : "ANIMATION"
+  return activityTypeFromService(category)
+}
+
+function parseSessionLabel(label: string) {
+  const parts = label.split("·").map((part) => part.trim()).filter(Boolean)
+  const title = parts[parts.length - 1] || label
+  const dayAndTime = parts.find((part) => /lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche/i.test(part))
+  const dayOfWeek = dayAndTime?.match(/lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche/i)?.[0]
+  const timeLabel = dayAndTime?.match(/\d{1,2}h\d{0,2}\s*[-àa]\s*\d{1,2}h\d{0,2}/i)?.[0]
+  const level = title.match(/debutants?|intermediaires?|adultes|magic team|noir|rouge|bleu|vert|orange|blanc/i)?.[0]
+  const location = parts.find((part) => /nyon|cmc|domicile|geneve|lausanne|gland|morges/i.test(part))
+  const instructor = parts.find((part) => /prof|laurent|alban|eliot|david|michel|loic|loïc/i.test(part))
+  return { title, dayOfWeek, timeLabel, level, location, instructor }
+}
+
+function inferPaidAmount(notes: string | null, expectedAmount: number) {
+  const normalized = String(notes || "").toLowerCase()
+  if (normalized.includes("payé") || normalized.includes("paye") || normalized.includes("bon validé")) return expectedAmount
+  return 0
+}
+
+function inferBalanceAmount(notes: string | null, expectedAmount: number) {
+  const paid = inferPaidAmount(notes, expectedAmount)
+  return Math.max(expectedAmount - paid, 0)
+}
+
+function inferPaymentStatus(notes: string | null, expectedAmount: number) {
+  if (!expectedAmount) return "UNKNOWN"
+  const normalized = String(notes || "").toLowerCase()
+  if (normalized.includes("payé") || normalized.includes("paye") || normalized.includes("bon validé")) return "PAID"
+  if (normalized.includes("acompte") || normalized.includes("solde")) return "PARTIAL"
+  return "DUE"
 }

@@ -28,6 +28,7 @@ import {
   createManualOrganization,
   createManualPerson,
   ensurePhoenixServices,
+  ensurePhoenixOperationalData,
   generateOpportunities,
   generateOpportunityMessage,
   loadPhoenixDashboard,
@@ -178,6 +179,11 @@ function phoenixNav(active: string) {
   const items = [
     ["/phoenix", "Dashboard"],
     ["/phoenix/import", "Import Excel"],
+    ["/phoenix/courses", "Cours collectifs"],
+    ["/phoenix/stages", "Stages & événements"],
+    ["/phoenix/animations", "Animations"],
+    ["/phoenix/agenda", "Agenda"],
+    ["/phoenix/registrations/new", "Nouvelle inscription"],
     ["/phoenix/clients", "Clients"],
     ["/phoenix/families", "Familles"],
     ["/phoenix/children", "Enfants"],
@@ -418,6 +424,50 @@ function renderBookingsTable(bookings: Awaited<ReturnType<typeof loadPhoenixDash
   </table>`
 }
 
+function renderSessionsTable(sessions: any[], mode: "courses" | "stages" | "animations" | "agenda") {
+  if (!sessions.length) return `<p class="muted">Aucune session pour le moment.</p>`
+  return `<table>
+    <thead><tr><th>Session</th><th>Date / horaire</th><th>Lieu / niveau</th><th>Inscriptions</th><th>Revenus</th></tr></thead>
+    <tbody>${sessions.map((session) => {
+      const registrations = session.registrations || []
+      const payments = registrations.flatMap((registration: any) => registration.payments || [])
+      const expected = payments.reduce((sum: number, payment: any) => sum + Number(payment.expectedAmount || 0), 0)
+      const paid = payments.reduce((sum: number, payment: any) => sum + Number(payment.paidAmount || 0), 0)
+      const sample = registrations.slice(0, mode === "agenda" ? 2 : 6).map((registration: any) => {
+        return registration.organization?.name || [registration.child?.firstName, registration.child?.lastName].filter(Boolean).join(" ") || registration.family?.name || "Client"
+      }).filter(Boolean)
+      return `<tr>
+        <td><strong>${escapeHtml(session.title)}</strong><br /><span class="muted">${escapeHtml(session.service?.name || "")}</span></td>
+        <td>${formatDate(session.startAt)}<br /><span class="muted">${escapeHtml([session.dayOfWeek, session.timeLabel].filter(Boolean).join(" · "))}</span></td>
+        <td>${escapeHtml([session.location, session.level, session.instructor].filter(Boolean).join(" · ") || "Non renseigné")}</td>
+        <td><span class="badge">${registrations.length} inscrit(s)</span><br /><span class="muted">${escapeHtml(sample.join(", "))}</span></td>
+        <td>${formatCurrency(expected)}<br /><span class="muted">Payé: ${formatCurrency(paid)}</span></td>
+      </tr>`
+    }).join("")}</tbody>
+  </table>`
+}
+
+async function loadOperationalSessions(kind: string | string[]) {
+  await ensurePhoenixOperationalData()
+  const kinds = Array.isArray(kind) ? kind : [kind]
+  return prisma.phoenixSession.findMany({
+    where: { kind: { in: kinds } },
+    orderBy: [{ startAt: "desc" }, { title: "asc" }],
+    take: 160,
+    include: {
+      service: true,
+      registrations: {
+        include: {
+          child: true,
+          family: true,
+          organization: true,
+          payments: true,
+        },
+      },
+    },
+  })
+}
+
 function renderPhoenixImportPage() {
   return renderPhoenixShell({
     active: "/phoenix/import",
@@ -602,8 +652,112 @@ app.post("/market-analysis/run", async (_req, res) => {
 })
 
 app.get("/phoenix", async (_req, res) => {
+  await ensurePhoenixOperationalData()
   const snapshot = await loadPhoenixDashboard()
   res.send(renderPhoenixDashboardPage(snapshot))
+})
+
+app.get("/phoenix/courses", async (_req, res) => {
+  const sessions = await loadOperationalSessions("COURSE")
+  res.send(renderPhoenixShell({
+    active: "/phoenix/courses",
+    title: "Cours collectifs",
+    subtitle: "Groupes par jour, horaire, niveau et prof, générés depuis les inscriptions et prêts pour la saisie future.",
+    body: `<div class="panel"><div class="panel-header"><h2>Groupes de cours</h2><a class="button" href="/phoenix/registrations/new?kind=COURSE">Ajouter une inscription</a></div>${renderSessionsTable(sessions, "courses")}</div>`,
+  }))
+})
+
+app.get("/phoenix/stages", async (_req, res) => {
+  const sessions = await loadOperationalSessions(["STAGE", "ESCAPE"])
+  res.send(renderPhoenixShell({
+    active: "/phoenix/stages",
+    title: "Stages & événements",
+    subtitle: "Participants, prix, soldes et historique des stages/événements.",
+    body: `<div class="panel"><div class="panel-header"><h2>Sessions stages & événements</h2><a class="button" href="/phoenix/registrations/new?kind=STAGE">Inscrire un participant</a></div>${renderSessionsTable(sessions, "stages")}</div>`,
+  }))
+})
+
+app.get("/phoenix/animations", async (_req, res) => {
+  const sessions = await loadOperationalSessions(["ANIMATION", "BIRTHDAY"])
+  res.send(renderPhoenixShell({
+    active: "/phoenix/animations",
+    title: "Animations externes",
+    subtitle: "Animations entreprises, institutions et anniversaires à domicile avec revenu prévu et intervenants.",
+    body: `<div class="panel"><div class="panel-header"><h2>Animations</h2><a class="button" href="/phoenix/registrations/new?kind=ANIMATION">Créer une animation</a></div>${renderSessionsTable(sessions, "animations")}</div>`,
+  }))
+})
+
+app.get("/phoenix/agenda", async (_req, res) => {
+  await ensurePhoenixOperationalData()
+  const sessions = await prisma.phoenixSession.findMany({
+    orderBy: [{ startAt: "desc" }, { title: "asc" }],
+    take: 220,
+    include: { service: true, registrations: { include: { child: true, family: true, organization: true, payments: true } } },
+  })
+  res.send(renderPhoenixShell({
+    active: "/phoenix/agenda",
+    title: "Agenda Phoenix",
+    subtitle: "Vue unique de toutes les sessions : cours, stages, anniversaires, animations et escape games.",
+    body: `<div class="panel"><div class="panel-header"><h2>Agenda opérationnel</h2><a class="button" href="/phoenix/registrations/new">Nouvelle inscription</a></div>${renderSessionsTable(sessions, "agenda")}</div>`,
+  }))
+})
+
+app.get("/phoenix/registrations/new", async (req, res) => {
+  await ensurePhoenixOperationalData()
+  const [services, sessions, children, parents, families, organizations] = await Promise.all([
+    prisma.phoenixService.findMany({ orderBy: { name: "asc" } }),
+    prisma.phoenixSession.findMany({ orderBy: [{ startAt: "desc" }, { title: "asc" }], take: 200 }),
+    prisma.phoenixPerson.findMany({ where: { type: "CHILD" }, orderBy: [{ lastName: "asc" }, { firstName: "asc" }], take: 500 }),
+    prisma.phoenixPerson.findMany({ where: { type: { in: ["PARENT", "CONTACT"] } }, orderBy: [{ lastName: "asc" }, { firstName: "asc" }], take: 500 }),
+    prisma.phoenixFamily.findMany({ orderBy: { name: "asc" }, take: 500 }),
+    prisma.phoenixOrganization.findMany({ orderBy: { name: "asc" }, take: 500 }),
+  ])
+  const requestedKind = String(req.query.kind || "COURSE")
+  res.send(renderPhoenixShell({
+    active: "/phoenix/registrations/new",
+    title: "Nouvelle inscription",
+    subtitle: "Formulaire unique pour cours, stage, anniversaire, animation externe ou escape game.",
+    body: `
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-header"><h2>Créer une session</h2></div>
+          <form method="post" action="/phoenix/sessions">
+            <div class="form-grid">
+              <label>Type<select name="kind">${["COURSE", "STAGE", "BIRTHDAY", "ANIMATION", "ESCAPE"].map((kind) => `<option value="${kind}" ${kind === requestedKind ? "selected" : ""}>${kind}</option>`).join("")}</select></label>
+              <label>Service<select name="serviceId">${services.map((service) => `<option value="${service.id}">${escapeHtml(service.name)}</option>`).join("")}</select></label>
+              <label class="full">Titre<input name="title" required /></label>
+              <label>Date<input type="date" name="startAt" /></label>
+              <label>Horaire<input name="timeLabel" placeholder="17h30 - 18h30" /></label>
+              <label>Lieu<input name="location" /></label>
+              <label>Niveau<input name="level" /></label>
+              <label>Capacité<input type="number" name="capacity" /></label>
+              <label>Prix<input type="number" step="0.01" name="price" /></label>
+              <label>Intervenant<input name="instructor" /></label>
+              <label class="full">Notes<textarea name="notes"></textarea></label>
+            </div>
+            <div class="actions" style="margin-top:16px;"><button type="submit">Créer la session</button></div>
+          </form>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><h2>Inscrire / réserver</h2></div>
+          <form method="post" action="/phoenix/registrations">
+            <div class="form-grid">
+              <label class="full">Session<select name="sessionId">${sessions.map((session) => `<option value="${session.id}">${escapeHtml([formatDate(session.startAt), session.title].join(" · "))}</option>`).join("")}</select></label>
+              <label>Enfant<select name="childId"><option value="">Aucun</option>${children.map((person) => `<option value="${person.id}">${escapeHtml([person.firstName, person.lastName].filter(Boolean).join(" "))}</option>`).join("")}</select></label>
+              <label>Parent/contact<select name="parentId"><option value="">Aucun</option>${parents.map((person) => `<option value="${person.id}">${escapeHtml([person.firstName, person.lastName, person.email].filter(Boolean).join(" · "))}</option>`).join("")}</select></label>
+              <label>Famille<select name="familyId"><option value="">Aucune</option>${families.map((family) => `<option value="${family.id}">${escapeHtml(family.name)}</option>`).join("")}</select></label>
+              <label>Organisation<select name="organizationId"><option value="">Aucune</option>${organizations.map((organization) => `<option value="${organization.id}">${escapeHtml(organization.name)}</option>`).join("")}</select></label>
+              <label>Montant prévu<input type="number" step="0.01" name="expectedAmount" /></label>
+              <label>Montant payé<input type="number" step="0.01" name="paidAmount" /></label>
+              <label>Statut paiement<select name="paymentStatus"><option value="DUE">À payer</option><option value="PARTIAL">Partiel</option><option value="PAID">Payé</option><option value="UNKNOWN">Inconnu</option></select></label>
+              <label class="full">Notes<textarea name="notes"></textarea></label>
+            </div>
+            <div class="actions" style="margin-top:16px;"><button type="submit">Créer l’inscription</button></div>
+          </form>
+        </div>
+      </div>
+    `,
+  }))
 })
 
 app.get("/phoenix/import", (_req, res) => {
@@ -632,7 +786,64 @@ app.post("/phoenix/import/preview", upload.single("file"), async (req, res) => {
 app.post("/phoenix/import/:id/commit", async (req, res) => {
   const mapping = Object.fromEntries(PHOENIX_FIELDS.map((field) => [field, String(req.body[field] || "")]).filter(([, value]) => value))
   await commitImport(req.params.id, mapping)
+  await ensurePhoenixOperationalData()
   res.redirect("/phoenix/opportunities")
+})
+
+app.post("/phoenix/sessions", async (req, res) => {
+  const service = await prisma.phoenixService.findUnique({ where: { id: String(req.body.serviceId) } })
+  if (!service) return res.redirect("/phoenix/registrations/new")
+  const activity = await prisma.phoenixActivity.upsert({
+    where: { serviceId_name: { serviceId: service.id, name: service.name } },
+    create: { serviceId: service.id, name: service.name, type: String(req.body.kind || "COURSE"), defaultPrice: service.estimatedValue },
+    update: {},
+  })
+  await prisma.phoenixSession.create({
+    data: {
+      activityId: activity.id,
+      serviceId: service.id,
+      title: String(req.body.title || service.name),
+      kind: String(req.body.kind || "COURSE"),
+      startAt: req.body.startAt ? new Date(String(req.body.startAt)) : undefined,
+      timeLabel: String(req.body.timeLabel || "") || null,
+      location: String(req.body.location || "") || null,
+      level: String(req.body.level || "") || null,
+      capacity: req.body.capacity ? Number(req.body.capacity) : null,
+      price: req.body.price ? Number(req.body.price) : service.estimatedValue,
+      instructor: String(req.body.instructor || "") || null,
+      sourceType: "manual",
+      sourceLabel: String(req.body.title || service.name),
+      notes: String(req.body.notes || "") || null,
+    },
+  })
+  res.redirect("/phoenix/agenda")
+})
+
+app.post("/phoenix/registrations", async (req, res) => {
+  const expectedAmount = Number(req.body.expectedAmount || 0)
+  const paidAmount = Number(req.body.paidAmount || 0)
+  const registration = await prisma.phoenixRegistration.create({
+    data: {
+      sessionId: String(req.body.sessionId),
+      childId: String(req.body.childId || "") || undefined,
+      parentId: String(req.body.parentId || "") || undefined,
+      familyId: String(req.body.familyId || "") || undefined,
+      organizationId: String(req.body.organizationId || "") || undefined,
+      sourceType: "manual",
+      notes: String(req.body.notes || "") || null,
+    },
+  })
+  await prisma.phoenixPayment.create({
+    data: {
+      registrationId: registration.id,
+      expectedAmount,
+      paidAmount,
+      balanceAmount: Math.max(expectedAmount - paidAmount, 0),
+      status: String(req.body.paymentStatus || (paidAmount >= expectedAmount && expectedAmount > 0 ? "PAID" : "DUE")),
+      notes: String(req.body.notes || "") || null,
+    },
+  })
+  res.redirect("/phoenix/agenda")
 })
 
 app.post("/phoenix/opportunities/generate", async (_req, res) => {
