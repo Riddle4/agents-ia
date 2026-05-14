@@ -21,10 +21,6 @@ import {
   type MarketDomain,
 } from "../src/services/market-analysis.service"
 import {
-  PHOENIX_FIELDS,
-  PHOENIX_IMPORT_TYPES,
-  commitImport,
-  createImportPreview,
   createManualOrganization,
   createManualPerson,
   ensurePhoenixServices,
@@ -32,6 +28,7 @@ import {
   generateOpportunities,
   generateOpportunityMessage,
   loadPhoenixDashboard,
+  parseExcel,
   updateOpportunityStatus,
 } from "../src/services/phoenix-crm.service"
 
@@ -194,6 +191,7 @@ function phoenixNav(active: string) {
     ["/phoenix/organizations", "Organisations"],
     ["/phoenix/opportunities", "Opportunités"],
     ["/phoenix/settings", "Paramètres"],
+    ["/phoenix/import", "Import XLS"],
   ]
 
   return items
@@ -293,6 +291,8 @@ function renderPhoenixShell(params: { active: string; title: string; subtitle: s
     .badge.LOST { background: rgba(255, 76, 104, 0.16); color: #ffd2da; }
     .message-box { white-space: pre-wrap; color: #dce8fb; background: rgba(0,0,0,0.22); border-radius: 14px; padding: 13px; border: 1px solid rgba(255,255,255,0.08); }
     .dropzone { border: 1px dashed rgba(120,190,255,0.5); background: rgba(0,153,255,0.08); border-radius: 18px; padding: 26px; text-align: center; }
+    .dropzone input { margin-bottom: 10px; }
+    .table-wrap { overflow-x: auto; overflow-y: auto; max-height: 560px; border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; }
     @media (max-width: 980px) {
       .layout { grid-template-columns: 1fr; }
       .sidebar { position: relative; height: auto; }
@@ -472,61 +472,226 @@ async function loadOperationalSessions(kind: string | string[]) {
   })
 }
 
+type PhoenixImportTarget = "privateClients" | "organizations"
+
+const PHOENIX_IMPORT_CONFIG: Record<PhoenixImportTarget, { label: string; description: string; redirect: string; fields: string[]; labels: Record<string, string> }> = {
+  privateClients: {
+    label: "Clients privés",
+    description: "Remplir le tableau des clients privés avec les élèves, parents et informations de contact.",
+    redirect: "/phoenix/clients",
+    fields: ["lastName", "firstName", "stageName", "magicLevel", "entryDate", "birthDate", "parentLastName", "parentFirstName", "address", "phone", "email"],
+    labels: {
+      lastName: "Nom",
+      firstName: "Prénom",
+      stageName: "Nom de scène",
+      magicLevel: "Niveau de magie",
+      entryDate: "Date d'entrée",
+      birthDate: "Date de naissance",
+      parentLastName: "Nom parent",
+      parentFirstName: "Prénom parent",
+      address: "Adresse",
+      phone: "Téléphone",
+      email: "E-mail",
+    },
+  },
+  organizations: {
+    label: "Organisations",
+    description: "Remplir le tableau des organisations avec l’entreprise et la personne de contact.",
+    redirect: "/phoenix/organizations",
+    fields: ["companyName", "contactLastName", "contactFirstName", "address", "phone", "email"],
+    labels: {
+      companyName: "Entreprise",
+      contactLastName: "Nom",
+      contactFirstName: "Prénom",
+      address: "Adresse",
+      phone: "Téléphone",
+      email: "E-mail",
+    },
+  },
+}
+
+function isPhoenixImportTarget(value: string): value is PhoenixImportTarget {
+  return value === "privateClients" || value === "organizations"
+}
+
+function normalizeImportHeader(value: string) {
+  return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim()
+}
+
+function suggestPhoenixSimpleMapping(headers: string[], target: PhoenixImportTarget) {
+  const mapping: Record<string, string> = {}
+  for (const header of headers) {
+    const normalized = normalizeImportHeader(header)
+    if (target === "privateClients") {
+      if (/nom.*scene|scene|magicien|artiste/.test(normalized)) mapping.stageName = header
+      else if (/niveau|level|magie|magic/.test(normalized)) mapping.magicLevel = header
+      else if (/date.*entree|entree|inscription|debut/.test(normalized)) mapping.entryDate = header
+      else if (/naissance|date.*nais|anniversaire/.test(normalized)) mapping.birthDate = header
+      else if (/prenom.*parent|parent.*prenom|contact.*prenom/.test(normalized)) mapping.parentFirstName = header
+      else if (/nom.*parent|parent.*nom|famille|contact.*nom/.test(normalized)) mapping.parentLastName = header
+      else if (/mail|email|courriel/.test(normalized)) mapping.email = header
+      else if (/tel|phone|portable|mobile/.test(normalized)) mapping.phone = header
+      else if (/adresse|address|rue|street/.test(normalized)) mapping.address = header
+      else if (/prenom|first name|firstname/.test(normalized) && !/parent|contact/.test(normalized)) mapping.firstName = header
+      else if (/\bnom\b|last name|lastname|surname/.test(normalized) && !/parent|contact|scene/.test(normalized)) mapping.lastName = header
+    } else {
+      if (/entreprise|organisation|organization|societe|institution|ecole|company/.test(normalized)) mapping.companyName = header
+      else if (/prenom|first name|firstname/.test(normalized)) mapping.contactFirstName = header
+      else if (/\bnom\b|last name|lastname|surname|contact/.test(normalized) && !/entreprise|organisation|societe|company/.test(normalized)) mapping.contactLastName = header
+      else if (/mail|email|courriel/.test(normalized)) mapping.email = header
+      else if (/tel|phone|portable|mobile/.test(normalized)) mapping.phone = header
+      else if (/adresse|address|rue|street/.test(normalized)) mapping.address = header
+    }
+  }
+  return mapping
+}
+
+async function createPhoenixSimpleImportPreview(params: { filename: string; target: PhoenixImportTarget; buffer: Buffer }) {
+  const parsed = parseExcel(params.buffer)
+  const mapping = suggestPhoenixSimpleMapping(parsed.headers, params.target)
+  const batch = await prisma.phoenixImportBatch.create({
+    data: {
+      filename: params.filename,
+      importType: params.target,
+      rawRows: parsed.rows,
+      rowCount: parsed.rows.length,
+      mapping,
+    },
+  })
+  return { batch, target: params.target, headers: parsed.headers, rows: parsed.rows.slice(0, 20), mapping }
+}
+
+function mappedImportValue(row: Record<string, string>, mapping: Record<string, string>, field: string) {
+  return String(row[mapping[field]] || "").trim().replace(/\s+/g, " ")
+}
+
+async function commitPhoenixSimpleImport(batchId: string, mapping: Record<string, string>) {
+  const batch = await prisma.phoenixImportBatch.findUnique({ where: { id: batchId } })
+  if (!batch || !isPhoenixImportTarget(batch.importType)) throw new Error("Import Phoenix introuvable.")
+  const rows = Array.isArray(batch.rawRows) ? (batch.rawRows as Record<string, string>[]) : []
+  let importedCount = 0
+  let duplicateCount = 0
+
+  for (const row of rows) {
+    if (batch.importType === "privateClients") {
+      const firstName = mappedImportValue(row, mapping, "firstName")
+      const lastName = mappedImportValue(row, mapping, "lastName")
+      const email = normalizeDashboardEmail(mappedImportValue(row, mapping, "email"))
+      const phone = normalizeDashboardPhone(mappedImportValue(row, mapping, "phone"))
+      const birthDate = parseDashboardDate(mappedImportValue(row, mapping, "birthDate"))
+      if (!firstName && !lastName && !email && !phone) continue
+      const duplicate = firstName || lastName ? await prisma.phoenixPerson.findFirst({
+        where: {
+          type: "CHILD",
+          firstName: firstName || null,
+          lastName: lastName || null,
+          OR: [
+            birthDate ? { birthDate } : undefined,
+            email ? { normalizedEmail: email } : undefined,
+            phone ? { normalizedPhone: phone } : undefined,
+            !birthDate && !email && !phone ? { id: { not: "" } } : undefined,
+          ].filter(Boolean) as any,
+        },
+      }) : null
+      if (duplicate) {
+        duplicateCount += 1
+        continue
+      }
+      await createManualPerson({
+        type: "CHILD",
+        firstName,
+        lastName,
+        stageName: mappedImportValue(row, mapping, "stageName"),
+        magicLevel: mappedImportValue(row, mapping, "magicLevel"),
+        entryDate: parseDashboardDate(mappedImportValue(row, mapping, "entryDate")),
+        birthDate,
+        parentLastName: mappedImportValue(row, mapping, "parentLastName"),
+        parentFirstName: mappedImportValue(row, mapping, "parentFirstName"),
+        address: mappedImportValue(row, mapping, "address"),
+        phone: phone || undefined,
+        email: email || undefined,
+      })
+      importedCount += 1
+    } else {
+      const companyName = mappedImportValue(row, mapping, "companyName")
+      const contactFirstName = mappedImportValue(row, mapping, "contactFirstName")
+      const contactLastName = mappedImportValue(row, mapping, "contactLastName")
+      const email = normalizeDashboardEmail(mappedImportValue(row, mapping, "email"))
+      const phone = normalizeDashboardPhone(mappedImportValue(row, mapping, "phone"))
+      if (!companyName && !contactFirstName && !contactLastName && !email && !phone) continue
+      const duplicateFilters = [
+        companyName ? { companyName: { equals: companyName, mode: "insensitive" } } : undefined,
+        email ? { email } : undefined,
+      ].filter(Boolean) as any[]
+      const duplicate = duplicateFilters.length ? await prisma.phoenixOrganization.findFirst({ where: { OR: duplicateFilters } }) : null
+      if (duplicate) {
+        duplicateCount += 1
+        continue
+      }
+      await createManualOrganization({
+        name: companyName || [contactFirstName, contactLastName].filter(Boolean).join(" ") || "Organisation sans nom",
+        companyName,
+        contactFirstName,
+        contactLastName,
+        address: mappedImportValue(row, mapping, "address"),
+        phone: phone || undefined,
+        email: email || undefined,
+      })
+      importedCount += 1
+    }
+  }
+
+  await prisma.phoenixImportBatch.update({
+    where: { id: batch.id },
+    data: { status: "IMPORTED", mapping, importedCount, duplicateCount },
+  })
+
+  return { target: batch.importType, importedCount, duplicateCount }
+}
+
 function renderPhoenixImportPage() {
   return renderPhoenixShell({
     active: "/phoenix/import",
-    title: "Import Excel",
-    subtitle: "Archiviste lit le fichier, propose un mapping, nettoie les données et prépare l’import.",
+    title: "Import XLS",
+    subtitle: "Importer des fichiers Excel vers les clients privés ou les organisations, après validation du mapping des colonnes.",
     body: `
-      <div class="panel">
-        <form method="post" action="/phoenix/import/preview" enctype="multipart/form-data">
-          <div class="form-grid">
-            <label>Type d’import
-              <select name="importType">${PHOENIX_IMPORT_TYPES.map((type) => `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`).join("")}</select>
-            </label>
-            <label>Fichier Excel
-              <div class="dropzone">
-                <input type="file" name="file" accept=".xlsx,.xls" required />
-                <div class="muted">Glisse le fichier ici ou clique pour choisir un .xlsx/.xls.</div>
-              </div>
-            </label>
-          </div>
-          <div class="actions" style="margin-top:16px;"><button type="submit">Prévisualiser</button></div>
-        </form>
+      <div class="grid-2">
+        ${(["privateClients", "organizations"] as PhoenixImportTarget[]).map((target) => {
+          const config = PHOENIX_IMPORT_CONFIG[target]
+          return `<div class="panel">
+            <div class="panel-header"><h2>${escapeHtml(config.label)}</h2></div>
+            <p class="muted">${escapeHtml(config.description)}</p>
+            <form method="post" action="/phoenix/import/preview" enctype="multipart/form-data">
+              <input type="hidden" name="target" value="${target}" />
+              <label>Fichier Excel
+                <div class="dropzone">
+                  <input type="file" name="file" accept=".xlsx,.xls" required />
+                  <div class="muted">Glisse le fichier ici ou clique pour choisir un .xlsx/.xls.</div>
+                </div>
+              </label>
+              <div class="actions" style="margin-top:16px;"><button type="submit">Prévisualiser et mapper</button></div>
+            </form>
+          </div>`
+        }).join("")}
       </div>
     `,
   })
 }
 
-function renderPhoenixImportPreviewPage(params: { batch: any; headers: string[]; rows: Record<string, string>[]; mapping: Record<string, string> }) {
-  const fieldLabels: Record<string, string> = {
-    childFirstName: "Prénom enfant",
-    childLastName: "Nom enfant",
-    childBirthDate: "Naissance enfant",
-    parentFirstName: "Prénom parent/contact",
-    parentLastName: "Nom parent/contact",
-    email: "E-mail",
-    phone: "Téléphone",
-    address: "Adresse du client",
-    magicLevel: "Niveau de magie",
-    organizationName: "Organisation",
-    service: "Service",
-    bookingDate: "Date prestation",
-    amount: "Montant",
-    notes: "Notes",
-  }
+function renderPhoenixImportPreviewPage(params: { batch: any; target: PhoenixImportTarget; headers: string[]; rows: Record<string, string>[]; mapping: Record<string, string> }) {
+  const config = PHOENIX_IMPORT_CONFIG[params.target]
 
   return renderPhoenixShell({
     active: "/phoenix/import",
-    title: "Prévisualisation import",
+    title: `Prévisualisation ${config.label}`,
     subtitle: `${params.batch.filename} · ${params.batch.rowCount} lignes détectées`,
     body: `
       <div class="panel">
         <div class="panel-header"><h2>Mapping des colonnes</h2><span class="badge">${params.headers.length} colonnes détectées</span></div>
         <form method="post" action="/phoenix/import/${params.batch.id}/commit">
           <div class="form-grid">
-            ${PHOENIX_FIELDS.map((field) => `
-              <label>${escapeHtml(fieldLabels[field] || field)}
+            ${config.fields.map((field) => `
+              <label>${escapeHtml(config.labels[field] || field)}
                 <select name="${escapeHtml(field)}">
                   <option value="">Ignorer</option>
                   ${params.headers.map((header) => `<option value="${escapeHtml(header)}" ${params.mapping[field] === header ? "selected" : ""}>${escapeHtml(header)}</option>`).join("")}
@@ -535,7 +700,7 @@ function renderPhoenixImportPreviewPage(params: { batch: any; headers: string[];
             `).join("")}
           </div>
           <div class="actions" style="margin-top:16px;">
-            <button type="submit">Importer et générer les opportunités</button>
+            <button type="submit">Importer vers ${escapeHtml(config.label)}</button>
             <a class="button secondary" href="/phoenix/import">Annuler</a>
           </div>
         </form>
@@ -545,7 +710,7 @@ function renderPhoenixImportPreviewPage(params: { batch: any; headers: string[];
           <div><h2>Aperçu des données</h2><div class="subtitle">Toutes les colonnes du fichier sont affichées. Fais défiler horizontalement si le tableau dépasse l’écran.</div></div>
           <span class="badge">${params.headers.length} colonnes</span>
         </div>
-        <div style="overflow-x:auto; overflow-y:auto; max-height:560px; border:1px solid rgba(255,255,255,0.08); border-radius:14px;">
+        <div class="table-wrap">
           <table style="min-width:${Math.max(params.headers.length * 150, 900)}px;">
             <thead><tr>${params.headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead>
             <tbody>${params.rows.slice(0, 12).map((row) => `<tr>${params.headers.map((header) => `<td>${escapeHtml(row[header] || "")}</td>`).join("")}</tr>`).join("")}</tbody>
@@ -770,9 +935,11 @@ app.get("/phoenix/import", (_req, res) => {
 app.post("/phoenix/import/preview", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) throw new Error("Aucun fichier Excel reçu.")
-    const preview = await createImportPreview({
+    const target = String(req.body.target || "")
+    if (!isPhoenixImportTarget(target)) throw new Error("Type d’import Phoenix invalide.")
+    const preview = await createPhoenixSimpleImportPreview({
       filename: req.file.originalname,
-      importType: String(req.body.importType || "générique"),
+      target,
       buffer: req.file.buffer,
     })
     res.send(renderPhoenixImportPreviewPage(preview))
@@ -787,10 +954,12 @@ app.post("/phoenix/import/preview", upload.single("file"), async (req, res) => {
 })
 
 app.post("/phoenix/import/:id/commit", async (req, res) => {
-  const mapping = Object.fromEntries(PHOENIX_FIELDS.map((field) => [field, String(req.body[field] || "")]).filter(([, value]) => value))
-  await commitImport(req.params.id, mapping)
-  await ensurePhoenixOperationalData()
-  res.redirect("/phoenix/opportunities")
+  const batch = await prisma.phoenixImportBatch.findUnique({ where: { id: req.params.id } })
+  if (!batch || !isPhoenixImportTarget(batch.importType)) return res.redirect("/phoenix/import")
+  const config = PHOENIX_IMPORT_CONFIG[batch.importType]
+  const mapping = Object.fromEntries(config.fields.map((field) => [field, String(req.body[field] || "")]).filter(([, value]) => value))
+  await commitPhoenixSimpleImport(req.params.id, mapping)
+  res.redirect(config.redirect)
 })
 
 app.post("/phoenix/sessions", async (req, res) => {
