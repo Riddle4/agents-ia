@@ -465,34 +465,35 @@ function renderPhoenixImportPreviewPage(params: { batch: any; headers: string[];
     title: "Prévisualisation import",
     subtitle: `${params.batch.filename} · ${params.batch.rowCount} lignes détectées`,
     body: `
-      <div class="grid-2">
-        <div class="panel">
-          <div class="panel-header"><h2>Mapping des colonnes</h2></div>
-          <form method="post" action="/phoenix/import/${params.batch.id}/commit">
-            <div class="form-grid">
-              ${PHOENIX_FIELDS.map((field) => `
-                <label>${escapeHtml(fieldLabels[field] || field)}
-                  <select name="${escapeHtml(field)}">
-                    <option value="">Ignorer</option>
-                    ${params.headers.map((header) => `<option value="${escapeHtml(header)}" ${params.mapping[field] === header ? "selected" : ""}>${escapeHtml(header)}</option>`).join("")}
-                  </select>
-                </label>
-              `).join("")}
-            </div>
-            <div class="actions" style="margin-top:16px;">
-              <button type="submit">Importer et générer les opportunités</button>
-              <a class="button secondary" href="/phoenix/import">Annuler</a>
-            </div>
-          </form>
-        </div>
-        <div class="panel">
-          <div class="panel-header"><h2>Aperçu des données</h2><span class="badge">${params.headers.length} colonnes</span></div>
-          <div style="overflow:auto;">
-            <table>
-              <thead><tr>${params.headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead>
-              <tbody>${params.rows.slice(0, 12).map((row) => `<tr>${params.headers.map((header) => `<td>${escapeHtml(row[header] || "")}</td>`).join("")}</tr>`).join("")}</tbody>
-            </table>
+      <div class="panel">
+        <div class="panel-header"><h2>Mapping des colonnes</h2><span class="badge">${params.headers.length} colonnes détectées</span></div>
+        <form method="post" action="/phoenix/import/${params.batch.id}/commit">
+          <div class="form-grid">
+            ${PHOENIX_FIELDS.map((field) => `
+              <label>${escapeHtml(fieldLabels[field] || field)}
+                <select name="${escapeHtml(field)}">
+                  <option value="">Ignorer</option>
+                  ${params.headers.map((header) => `<option value="${escapeHtml(header)}" ${params.mapping[field] === header ? "selected" : ""}>${escapeHtml(header)}</option>`).join("")}
+                </select>
+              </label>
+            `).join("")}
           </div>
+          <div class="actions" style="margin-top:16px;">
+            <button type="submit">Importer et générer les opportunités</button>
+            <a class="button secondary" href="/phoenix/import">Annuler</a>
+          </div>
+        </form>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <div><h2>Aperçu des données</h2><div class="subtitle">Toutes les colonnes du fichier sont affichées. Fais défiler horizontalement si le tableau dépasse l’écran.</div></div>
+          <span class="badge">${params.headers.length} colonnes</span>
+        </div>
+        <div style="overflow-x:auto; overflow-y:auto; max-height:560px; border:1px solid rgba(255,255,255,0.08); border-radius:14px;">
+          <table style="min-width:${Math.max(params.headers.length * 150, 900)}px;">
+            <thead><tr>${params.headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead>
+            <tbody>${params.rows.slice(0, 12).map((row) => `<tr>${params.headers.map((header) => `<td>${escapeHtml(row[header] || "")}</td>`).join("")}</tr>`).join("")}</tbody>
+          </table>
         </div>
       </div>
     `,
