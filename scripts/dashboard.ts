@@ -1,5 +1,6 @@
 import "dotenv/config"
 import express from "express"
+import multer from "multer"
 import { prisma } from "../src/lib/prisma"
 import {
   addIgnoredSender,
@@ -19,9 +20,26 @@ import {
   runMarketAnalysis,
   type MarketDomain,
 } from "../src/services/market-analysis.service"
+import {
+  PHOENIX_FIELDS,
+  PHOENIX_IMPORT_TYPES,
+  commitImport,
+  createImportPreview,
+  createManualOrganization,
+  createManualPerson,
+  ensurePhoenixServices,
+  generateOpportunities,
+  generateOpportunityMessage,
+  loadPhoenixDashboard,
+  updateOpportunityStatus,
+} from "../src/services/phoenix-crm.service"
 
 const app = express()
 const port = process.env.PORT || 3000
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 12 * 1024 * 1024 },
+})
 
 app.use(express.urlencoded({ extended: true }))
 app.use(express.json({ limit: "35mb" }))
@@ -135,6 +153,352 @@ function renderMarketSourceLink(url: string | null) {
   return `<a class="link-button market-source-link" href="${safeUrl}" data-source-url="${safeUrl}" target="_blank" rel="noopener noreferrer">Voir la source</a>`
 }
 
+function formatCurrency(value: number | null | undefined) {
+  return `CHF ${Number(value || 0).toLocaleString("fr-CH")}`
+}
+
+function formatDate(value: Date | string | null | undefined) {
+  if (!value) return "Non renseigné"
+  return new Date(value).toLocaleDateString("fr-CH")
+}
+
+function normalizeDashboardEmail(value: unknown) {
+  return String(value || "").trim().toLowerCase() || null
+}
+
+function normalizeDashboardPhone(value: unknown) {
+  return String(value || "").trim().replace(/[^0-9+]/g, "") || null
+}
+
+function redirectBack(res: express.Response, fallback: string, req?: express.Request) {
+  res.redirect(req?.headers.referer || fallback)
+}
+
+function phoenixNav(active: string) {
+  const items = [
+    ["/phoenix", "Dashboard"],
+    ["/phoenix/import", "Import Excel"],
+    ["/phoenix/clients", "Clients"],
+    ["/phoenix/families", "Familles"],
+    ["/phoenix/children", "Enfants"],
+    ["/phoenix/organizations", "Organisations"],
+    ["/phoenix/opportunities", "Opportunités"],
+    ["/phoenix/settings", "Paramètres"],
+  ]
+
+  return items
+    .map(([href, label]) => `<a class="side-link ${active === href ? "is-active" : ""}" href="${href}">${label}</a>`)
+    .join("")
+}
+
+function renderPhoenixShell(params: { active: string; title: string; subtitle: string; body: string }) {
+  return `
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Phoenix CRM — Cosmo IA</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(0, 153, 255, 0.22), transparent 32%),
+        radial-gradient(circle at top right, rgba(122, 92, 255, 0.19), transparent 34%),
+        linear-gradient(180deg, #050914 0%, #070b16 55%, #04070d 100%);
+      color: #f8fbff;
+    }
+    a { color: inherit; text-decoration: none; }
+    .layout { display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
+    .sidebar {
+      position: sticky; top: 0; height: 100vh; padding: 26px 20px;
+      background: rgba(255,255,255,0.045); border-right: 1px solid rgba(255,255,255,0.08);
+      backdrop-filter: blur(18px); display: flex; flex-direction: column; gap: 24px;
+    }
+    .sidebar-brand { display: flex; align-items: center; gap: 12px; }
+    .sidebar-logo {
+      width: 46px; height: 46px; object-fit: contain; border-radius: 12px;
+      background: rgba(255,255,255,0.96); padding: 7px; flex: 0 0 auto;
+    }
+    .sidebar-title { font-size: 22px; font-weight: 900; letter-spacing: -0.04em; }
+    .sidebar-subtitle, .subtitle, .muted { color: #91a2bd; }
+    .sidebar-subtitle { font-size: 12px; margin-top: 2px; }
+    .side-nav { display: grid; gap: 8px; }
+    .side-link {
+      display: block;
+      width: 100%; min-height: 44px; border-radius: 14px; padding: 12px 13px;
+      background: transparent; border: 1px solid transparent; color: #aab8ce;
+      font: inherit; font-weight: 850; text-align: left; cursor: pointer; transition: 0.16s ease;
+    }
+    .side-link:hover, .side-link.is-active {
+      background: rgba(0, 153, 255, 0.13); border-color: rgba(0,153,255,0.24);
+      color: #ffffff; box-shadow: 0 0 28px rgba(0,153,255,0.08);
+    }
+    .sidebar-footer { margin-top: auto; color: #73839d; font-size: 12px; line-height: 1.45; }
+    .main { width: min(1380px, calc(100% - 68px)); margin: 0 auto; padding: 34px 0; min-width: 0; }
+    .topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 28px; }
+    h1 { margin: 0; font-size: 36px; letter-spacing: -0.06em; }
+    h2, h3 { margin: 0; letter-spacing: -0.03em; }
+    .subtitle { margin-top: 7px; font-size: 15px; max-width: 820px; line-height: 1.55; }
+    .status-pill {
+      padding: 10px 15px; border-radius: 999px; font-weight: 800; font-size: 13px;
+      background: rgba(40, 255, 170, 0.12); border: 1px solid rgba(40, 255, 170, 0.24); color: #b8ffdc;
+      white-space: nowrap;
+    }
+    .kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
+    .kpi-card, .panel, .data-card {
+      border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.055);
+      border-radius: 18px; box-shadow: 0 20px 70px rgba(0,0,0,0.18);
+    }
+    .kpi-card { padding: 18px; }
+    .kpi-label { color: #91a2bd; font-size: 12px; font-weight: 850; text-transform: uppercase; }
+    .kpi-value { font-size: 30px; font-weight: 950; margin-top: 8px; letter-spacing: -0.05em; }
+    .grid-2 { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(360px, 0.75fr); gap: 16px; }
+    .panel { padding: 20px; margin-bottom: 16px; }
+    .panel-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+    .actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .button, button {
+      min-height: 40px; border-radius: 13px; padding: 10px 14px; border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(0,153,255,0.14); color: #f8fbff; font: inherit; font-weight: 850; cursor: pointer;
+    }
+    .button.secondary, button.secondary { background: rgba(255,255,255,0.07); color: #d9e4f6; }
+    .button.danger, button.danger { background: rgba(255, 76, 104, 0.16); border-color: rgba(255, 76, 104, 0.28); color: #ffd2da; }
+    input, select, textarea {
+      width: 100%; min-height: 42px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(3,8,18,0.72); color: #f8fbff; padding: 10px 12px; font: inherit;
+    }
+    textarea { min-height: 90px; resize: vertical; }
+    label { display: grid; gap: 7px; color: #c7d4ea; font-size: 13px; font-weight: 800; }
+    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .form-grid .full { grid-column: 1 / -1; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 12px 10px; border-bottom: 1px solid rgba(255,255,255,0.08); text-align: left; vertical-align: top; }
+    th { color: #91a2bd; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .badge { display: inline-flex; border-radius: 999px; padding: 5px 9px; background: rgba(255,255,255,0.08); color: #cfe2ff; font-size: 12px; font-weight: 850; }
+    .badge.high, .badge.OPEN { background: rgba(255, 196, 87, 0.16); color: #ffe0a0; }
+    .badge.WON { background: rgba(40, 255, 170, 0.12); color: #b8ffdc; }
+    .badge.LOST { background: rgba(255, 76, 104, 0.16); color: #ffd2da; }
+    .message-box { white-space: pre-wrap; color: #dce8fb; background: rgba(0,0,0,0.22); border-radius: 14px; padding: 13px; border: 1px solid rgba(255,255,255,0.08); }
+    .dropzone { border: 1px dashed rgba(120,190,255,0.5); background: rgba(0,153,255,0.08); border-radius: 18px; padding: 26px; text-align: center; }
+    @media (max-width: 980px) {
+      .layout { grid-template-columns: 1fr; }
+      .sidebar { position: relative; height: auto; }
+      .main { width: min(100% - 28px, 1380px); padding-top: 20px; }
+      .kpi-grid, .grid-2, .form-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <img src="/cosmo-logo.svg" alt="Cosmo" class="sidebar-logo" />
+        <div>
+          <div class="sidebar-title">Phoenix CRM</div>
+          <div class="sidebar-subtitle">Powered by Cosmo IA</div>
+        </div>
+      </div>
+      <nav class="side-nav" aria-label="Navigation Phoenix">
+        ${phoenixNav(params.active)}
+        <a class="side-link" href="/">Retour Echo / Spectra</a>
+      </nav>
+      <div class="sidebar-footer">Archiviste, Détective, Stratège, Copywriter et Analyste travaillent sur les données importées.</div>
+    </aside>
+    <main class="main">
+      <div class="topbar">
+        <div>
+          <h1>${escapeHtml(params.title)}</h1>
+          <div class="subtitle">${escapeHtml(params.subtitle)}</div>
+        </div>
+        <div class="status-pill">Phoenix V1</div>
+      </div>
+      ${params.body}
+    </main>
+  </div>
+  <script>
+    async function copyPhoenixText(id, button) {
+      const node = document.getElementById(id)
+      if (!node) return
+      await navigator.clipboard.writeText(node.innerText)
+      const old = button.innerText
+      button.innerText = "Copié"
+      setTimeout(() => button.innerText = old, 1400)
+    }
+    document.querySelectorAll("[data-confirm]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        if (!confirm(button.dataset.confirm)) event.preventDefault()
+      })
+    })
+  </script>
+</body>
+</html>`
+}
+
+function renderPhoenixDashboardPage(snapshot: Awaited<ReturnType<typeof loadPhoenixDashboard>>) {
+  const openOpportunities = snapshot.opportunities.filter((item) => item.status === "OPEN")
+  return renderPhoenixShell({
+    active: "/phoenix",
+    title: "Phoenix CRM",
+    subtitle: "CRM intelligent orienté revenus pour importer l’historique, repérer les revenus dormants et préparer les relances.",
+    body: `
+      <div class="kpi-grid">
+        <div class="kpi-card"><div class="kpi-label">Clients</div><div class="kpi-value">${snapshot.people.length}</div></div>
+        <div class="kpi-card"><div class="kpi-label">Familles</div><div class="kpi-value">${snapshot.families.length}</div></div>
+        <div class="kpi-card"><div class="kpi-label">Organisations</div><div class="kpi-value">${snapshot.organizations.length}</div></div>
+        <div class="kpi-card"><div class="kpi-label">Potentiel ouvert</div><div class="kpi-value">${formatCurrency(snapshot.totalPotential)}</div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <div><h2>Opportunités prioritaires</h2><div class="subtitle">Générées par les règles métier Phoenix.</div></div>
+          <div class="actions">
+            <form method="post" action="/phoenix/opportunities/generate"><button type="submit">Générer les opportunités</button></form>
+            <a class="button secondary" href="/phoenix/import">Importer un Excel</a>
+          </div>
+        </div>
+        ${renderOpportunitiesTable(openOpportunities.slice(0, 12))}
+      </div>
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-header"><h2>Dernières prestations</h2><a class="button secondary" href="/phoenix/clients">Voir clients</a></div>
+          ${renderBookingsTable(snapshot.bookings.slice(0, 10))}
+        </div>
+        <div class="panel">
+          <div class="panel-header"><h2>Services Phoenix</h2><a class="button secondary" href="/phoenix/settings">Paramètres</a></div>
+          <table><tbody>${snapshot.services.map((service) => `
+            <tr><td>${escapeHtml(service.name)}</td><td><span class="badge">${escapeHtml(service.category)}</span></td><td>${formatCurrency(service.estimatedValue)}</td></tr>
+          `).join("")}</tbody></table>
+        </div>
+      </div>
+    `,
+  })
+}
+
+function renderOpportunitiesTable(opportunities: Awaited<ReturnType<typeof loadPhoenixDashboard>>["opportunities"]) {
+  if (!opportunities.length) return `<p class="muted">Aucune opportunité pour le moment. Lance une génération après un import.</p>`
+  return `<table>
+    <thead><tr><th>Opportunité</th><th>Cible</th><th>Service</th><th>Potentiel</th><th>Statut</th><th>Actions</th></tr></thead>
+    <tbody>${opportunities.map((item) => {
+      const target = item.organization?.name || item.family?.name || [item.person?.firstName, item.person?.lastName].filter(Boolean).join(" ") || "Client"
+      const message = item.messages[0]
+      const messageId = `message-${item.id}`
+      return `<tr>
+        <td><strong>${escapeHtml(item.title)}</strong><div class="muted">${escapeHtml(item.reason)}</div></td>
+        <td>${escapeHtml(target)}</td>
+        <td>${escapeHtml(item.service.name)}</td>
+        <td>${formatCurrency(item.estimatedRevenue)}</td>
+        <td><span class="badge ${escapeHtml(item.status)}">${escapeHtml(item.status)}</span></td>
+        <td>
+          <div class="actions">
+            <form method="post" action="/phoenix/opportunities/${item.id}/message"><input type="hidden" name="channel" value="email" /><button type="submit">E-mail</button></form>
+            <form method="post" action="/phoenix/opportunities/${item.id}/message"><input type="hidden" name="channel" value="whatsapp" /><button class="secondary" type="submit">WhatsApp</button></form>
+            <form method="post" action="/phoenix/opportunities/${item.id}/status"><input type="hidden" name="status" value="WON" /><button class="secondary" type="submit">Gagnée</button></form>
+          </div>
+          ${message ? `<div id="${messageId}" class="message-box">${escapeHtml(message.content)}</div><button class="secondary" type="button" onclick="copyPhoenixText('${messageId}', this)">Copier le message</button>` : ""}
+        </td>
+      </tr>`
+    }).join("")}</tbody>
+  </table>`
+}
+
+function renderBookingsTable(bookings: Awaited<ReturnType<typeof loadPhoenixDashboard>>["bookings"]) {
+  if (!bookings.length) return `<p class="muted">Aucune prestation importée.</p>`
+  return `<table>
+    <thead><tr><th>Date</th><th>Service</th><th>Client</th><th>Montant</th></tr></thead>
+    <tbody>${bookings.map((booking) => `
+      <tr>
+        <td>${formatDate(booking.bookingDate)}</td>
+        <td>${escapeHtml(booking.service.name)}</td>
+        <td>${escapeHtml(booking.organization?.name || [booking.child?.firstName, booking.child?.lastName].filter(Boolean).join(" ") || "Client")}</td>
+        <td>${booking.amount ? formatCurrency(booking.amount) : "Non renseigné"}</td>
+      </tr>
+    `).join("")}</tbody>
+  </table>`
+}
+
+function renderPhoenixImportPage() {
+  return renderPhoenixShell({
+    active: "/phoenix/import",
+    title: "Import Excel",
+    subtitle: "Archiviste lit le fichier, propose un mapping, nettoie les données et prépare l’import.",
+    body: `
+      <div class="panel">
+        <form method="post" action="/phoenix/import/preview" enctype="multipart/form-data">
+          <div class="form-grid">
+            <label>Type d’import
+              <select name="importType">${PHOENIX_IMPORT_TYPES.map((type) => `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`).join("")}</select>
+            </label>
+            <label>Fichier Excel
+              <div class="dropzone">
+                <input type="file" name="file" accept=".xlsx,.xls" required />
+                <div class="muted">Glisse le fichier ici ou clique pour choisir un .xlsx/.xls.</div>
+              </div>
+            </label>
+          </div>
+          <div class="actions" style="margin-top:16px;"><button type="submit">Prévisualiser</button></div>
+        </form>
+      </div>
+    `,
+  })
+}
+
+function renderPhoenixImportPreviewPage(params: { batch: any; headers: string[]; rows: Record<string, string>[]; mapping: Record<string, string> }) {
+  const fieldLabels: Record<string, string> = {
+    childFirstName: "Prénom enfant",
+    childLastName: "Nom enfant",
+    childBirthDate: "Naissance enfant",
+    parentFirstName: "Prénom parent/contact",
+    parentLastName: "Nom parent/contact",
+    email: "E-mail",
+    phone: "Téléphone",
+    organizationName: "Organisation",
+    service: "Service",
+    bookingDate: "Date prestation",
+    amount: "Montant",
+    notes: "Notes",
+  }
+
+  return renderPhoenixShell({
+    active: "/phoenix/import",
+    title: "Prévisualisation import",
+    subtitle: `${params.batch.filename} · ${params.batch.rowCount} lignes détectées`,
+    body: `
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-header"><h2>Mapping des colonnes</h2></div>
+          <form method="post" action="/phoenix/import/${params.batch.id}/commit">
+            <div class="form-grid">
+              ${PHOENIX_FIELDS.map((field) => `
+                <label>${escapeHtml(fieldLabels[field] || field)}
+                  <select name="${escapeHtml(field)}">
+                    <option value="">Ignorer</option>
+                    ${params.headers.map((header) => `<option value="${escapeHtml(header)}" ${params.mapping[field] === header ? "selected" : ""}>${escapeHtml(header)}</option>`).join("")}
+                  </select>
+                </label>
+              `).join("")}
+            </div>
+            <div class="actions" style="margin-top:16px;">
+              <button type="submit">Importer et générer les opportunités</button>
+              <a class="button secondary" href="/phoenix/import">Annuler</a>
+            </div>
+          </form>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><h2>Aperçu des données</h2></div>
+          <div style="overflow:auto;">
+            <table>
+              <thead><tr>${params.headers.slice(0, 8).map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead>
+              <tbody>${params.rows.slice(0, 12).map((row) => `<tr>${params.headers.slice(0, 8).map((header) => `<td>${escapeHtml(row[header] || "")}</td>`).join("")}</tr>`).join("")}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `,
+  })
+}
+
 app.post("/tasks/:id/done", async (req, res) => {
   await prisma.task.update({
     where: {
@@ -232,6 +596,292 @@ app.post("/market-analysis/run", async (_req, res) => {
       error: message,
     })
   }
+})
+
+app.get("/phoenix", async (_req, res) => {
+  const snapshot = await loadPhoenixDashboard()
+  res.send(renderPhoenixDashboardPage(snapshot))
+})
+
+app.get("/phoenix/import", (_req, res) => {
+  res.send(renderPhoenixImportPage())
+})
+
+app.post("/phoenix/import/preview", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) throw new Error("Aucun fichier Excel reçu.")
+    const preview = await createImportPreview({
+      filename: req.file.originalname,
+      importType: String(req.body.importType || "générique"),
+      buffer: req.file.buffer,
+    })
+    res.send(renderPhoenixImportPreviewPage(preview))
+  } catch (error) {
+    res.status(400).send(renderPhoenixShell({
+      active: "/phoenix/import",
+      title: "Import impossible",
+      subtitle: error instanceof Error ? error.message : "Erreur inconnue",
+      body: `<a class="button" href="/phoenix/import">Revenir à l’import</a>`,
+    }))
+  }
+})
+
+app.post("/phoenix/import/:id/commit", async (req, res) => {
+  const mapping = Object.fromEntries(PHOENIX_FIELDS.map((field) => [field, String(req.body[field] || "")]).filter(([, value]) => value))
+  await commitImport(req.params.id, mapping)
+  res.redirect("/phoenix/opportunities")
+})
+
+app.post("/phoenix/opportunities/generate", async (_req, res) => {
+  await generateOpportunities()
+  res.redirect("/phoenix/opportunities")
+})
+
+app.get("/phoenix/opportunities", async (_req, res) => {
+  const snapshot = await loadPhoenixDashboard()
+  res.send(renderPhoenixShell({
+    active: "/phoenix/opportunities",
+    title: "Opportunités commerciales",
+    subtitle: "Stratège et Analyste repèrent les revenus dormants et estiment le potentiel commercial.",
+    body: `<div class="panel"><div class="panel-header"><h2>Opportunités</h2><form method="post" action="/phoenix/opportunities/generate"><button type="submit">Regénérer</button></form></div>${renderOpportunitiesTable(snapshot.opportunities)}</div>`,
+  }))
+})
+
+app.post("/phoenix/opportunities/:id/message", async (req, res) => {
+  await generateOpportunityMessage(req.params.id, String(req.body.channel || "email"))
+  redirectBack(res, "/phoenix/opportunities", req)
+})
+
+app.post("/phoenix/opportunities/:id/status", async (req, res) => {
+  await updateOpportunityStatus(req.params.id, String(req.body.status || "OPEN"))
+  redirectBack(res, "/phoenix/opportunities", req)
+})
+
+app.post("/phoenix/opportunities/:id/delete", async (req, res) => {
+  await prisma.phoenixOpportunity.delete({ where: { id: req.params.id } })
+  redirectBack(res, "/phoenix/opportunities", req)
+})
+
+app.get("/phoenix/clients", async (_req, res) => {
+  const people = await prisma.phoenixPerson.findMany({
+    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    include: { family: true, organization: true },
+  })
+  res.send(renderPhoenixShell({
+    active: "/phoenix/clients",
+    title: "Clients",
+    subtitle: "Parents, contacts, enfants et personnes importées ou ajoutées manuellement.",
+    body: `
+      <div class="panel">
+        <div class="panel-header"><h2>Ajouter une personne</h2></div>
+        <form method="post" action="/phoenix/people">
+          <div class="form-grid">
+            <label>Type<select name="type"><option value="PARENT">Parent</option><option value="CHILD">Enfant</option><option value="CONTACT">Contact organisation</option></select></label>
+            <label>Prénom<input name="firstName" /></label>
+            <label>Nom<input name="lastName" /></label>
+            <label>E-mail<input name="email" type="email" /></label>
+            <label>Téléphone<input name="phone" /></label>
+            <label class="full">Notes<textarea name="notes"></textarea></label>
+          </div>
+          <div class="actions" style="margin-top:16px;"><button type="submit">Ajouter</button></div>
+        </form>
+      </div>
+      <div class="panel"><div class="panel-header"><h2>Liste clients</h2></div>
+        <table><thead><tr><th>Personne</th><th>Contact</th><th>Liens</th><th>Modifier</th></tr></thead><tbody>
+          ${people.map((person) => `<tr>
+            <td><span class="badge">${escapeHtml(person.type)}</span><br /><strong>${escapeHtml([person.firstName, person.lastName].filter(Boolean).join(" ") || "Sans nom")}</strong></td>
+            <td>${escapeHtml(person.email || "")}<br /><span class="muted">${escapeHtml(person.phone || "")}</span></td>
+            <td>${escapeHtml(person.family?.name || person.organization?.name || "")}</td>
+            <td>
+              <form method="post" action="/phoenix/people/${person.id}" class="form-grid">
+                <input name="firstName" value="${escapeHtml(person.firstName || "")}" />
+                <input name="lastName" value="${escapeHtml(person.lastName || "")}" />
+                <input name="email" value="${escapeHtml(person.email || "")}" />
+                <input name="phone" value="${escapeHtml(person.phone || "")}" />
+                <textarea class="full" name="notes">${escapeHtml(person.notes || "")}</textarea>
+                <button class="full" type="submit">Enregistrer</button>
+              </form>
+              <form method="post" action="/phoenix/people/${person.id}/delete"><button class="danger" data-confirm="Supprimer cette personne ?" type="submit">Supprimer</button></form>
+            </td>
+          </tr>`).join("")}
+        </tbody></table>
+      </div>
+    `,
+  }))
+})
+
+app.get("/phoenix/children", async (_req, res) => {
+  const children = await prisma.phoenixPerson.findMany({
+    where: { type: "CHILD" },
+    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    include: { family: true, childBookings: { include: { service: true }, orderBy: { bookingDate: "desc" } } },
+  })
+  res.send(renderPhoenixShell({
+    active: "/phoenix/children",
+    title: "Enfants",
+    subtitle: "Vue centrée sur le parcours idéal : cours, stages, anniversaire et escape games.",
+    body: `<div class="panel"><table><thead><tr><th>Enfant</th><th>Famille</th><th>Historique</th></tr></thead><tbody>${children.map((child) => `
+      <tr><td><strong>${escapeHtml([child.firstName, child.lastName].filter(Boolean).join(" ") || "Sans nom")}</strong><br /><span class="muted">${formatDate(child.birthDate)}</span></td><td>${escapeHtml(child.family?.name || "")}</td><td>${child.childBookings.map((booking) => `<span class="badge">${escapeHtml(booking.service.name)}</span>`).join(" ") || "Aucune prestation"}</td></tr>
+    `).join("")}</tbody></table></div>`,
+  }))
+})
+
+app.post("/phoenix/people", async (req, res) => {
+  await createManualPerson({
+    type: String(req.body.type || "PARENT"),
+    firstName: String(req.body.firstName || ""),
+    lastName: String(req.body.lastName || ""),
+    email: String(req.body.email || ""),
+    phone: String(req.body.phone || ""),
+    notes: String(req.body.notes || ""),
+  })
+  res.redirect("/phoenix/clients")
+})
+
+app.post("/phoenix/people/:id", async (req, res) => {
+  await prisma.phoenixPerson.update({
+    where: { id: req.params.id },
+    data: {
+      firstName: String(req.body.firstName || "") || null,
+      lastName: String(req.body.lastName || "") || null,
+      email: normalizeDashboardEmail(req.body.email),
+      phone: normalizeDashboardPhone(req.body.phone),
+      normalizedEmail: normalizeDashboardEmail(req.body.email),
+      normalizedPhone: normalizeDashboardPhone(req.body.phone),
+      notes: String(req.body.notes || "") || null,
+    },
+  })
+  redirectBack(res, "/phoenix/clients", req)
+})
+
+app.post("/phoenix/people/:id/delete", async (req, res) => {
+  await prisma.phoenixPerson.delete({ where: { id: req.params.id } })
+  redirectBack(res, "/phoenix/clients", req)
+})
+
+app.get("/phoenix/families", async (_req, res) => {
+  const families = await prisma.phoenixFamily.findMany({
+    orderBy: { name: "asc" },
+    include: { people: true, bookings: { include: { service: true } }, opportunities: true },
+  })
+  res.send(renderPhoenixShell({
+    active: "/phoenix/families",
+    title: "Familles",
+    subtitle: "Détective regroupe les personnes par e-mail, téléphone et nom de famille.",
+    body: `<div class="panel"><table><thead><tr><th>Famille</th><th>Membres</th><th>Prestations</th><th>Potentiel</th></tr></thead><tbody>${families.map((family) => `
+      <tr><td><strong>${escapeHtml(family.name)}</strong><br /><span class="muted">${escapeHtml(family.email || family.phone || "")}</span></td><td>${family.people.map((person) => escapeHtml([person.firstName, person.lastName].filter(Boolean).join(" ") || person.type)).join("<br />")}</td><td>${family.bookings.map((booking) => `<span class="badge">${escapeHtml(booking.service.name)}</span>`).join(" ")}</td><td>${formatCurrency(family.opportunities.filter((item) => item.status === "OPEN").reduce((sum, item) => sum + item.estimatedRevenue, 0))}</td></tr>
+    `).join("")}</tbody></table></div>`,
+  }))
+})
+
+app.get("/phoenix/organizations", async (_req, res) => {
+  const organizations = await prisma.phoenixOrganization.findMany({
+    orderBy: { name: "asc" },
+    include: { bookings: { include: { service: true } }, opportunities: true },
+  })
+  res.send(renderPhoenixShell({
+    active: "/phoenix/organizations",
+    title: "Organisations",
+    subtitle: "Institutions et entreprises à relancer pour animations, team building, Noël, spectacle ou événement annuel.",
+    body: `
+      <div class="panel">
+        <div class="panel-header"><h2>Ajouter une organisation</h2></div>
+        <form method="post" action="/phoenix/organizations">
+          <div class="form-grid">
+            <label>Nom<input name="name" required /></label>
+            <label>Type<input name="type" placeholder="Entreprise, école, institution..." /></label>
+            <label>E-mail<input name="email" type="email" /></label>
+            <label>Téléphone<input name="phone" /></label>
+            <label>Site web<input name="website" /></label>
+            <label class="full">Notes<textarea name="notes"></textarea></label>
+          </div>
+          <div class="actions" style="margin-top:16px;"><button type="submit">Ajouter</button></div>
+        </form>
+      </div>
+      <div class="panel"><table><thead><tr><th>Organisation</th><th>Historique</th><th>Potentiel</th><th>Modifier</th></tr></thead><tbody>${organizations.map((organization) => `
+        <tr>
+          <td><strong>${escapeHtml(organization.name)}</strong><br /><span class="muted">${escapeHtml([organization.type, organization.email, organization.phone].filter(Boolean).join(" · "))}</span></td>
+          <td>${organization.bookings.map((booking) => `<span class="badge">${escapeHtml(booking.service.name)}</span>`).join(" ") || "Aucun historique"}</td>
+          <td>${formatCurrency(organization.opportunities.filter((item) => item.status === "OPEN").reduce((sum, item) => sum + item.estimatedRevenue, 0))}</td>
+          <td>
+            <form method="post" action="/phoenix/organizations/${organization.id}" class="form-grid">
+              <input name="name" value="${escapeHtml(organization.name)}" />
+              <input name="type" value="${escapeHtml(organization.type || "")}" />
+              <input name="email" value="${escapeHtml(organization.email || "")}" />
+              <input name="phone" value="${escapeHtml(organization.phone || "")}" />
+              <input class="full" name="website" value="${escapeHtml(organization.website || "")}" />
+              <textarea class="full" name="notes">${escapeHtml(organization.notes || "")}</textarea>
+              <button class="full" type="submit">Enregistrer</button>
+            </form>
+            <form method="post" action="/phoenix/organizations/${organization.id}/delete"><button class="danger" data-confirm="Supprimer cette organisation ?" type="submit">Supprimer</button></form>
+          </td>
+        </tr>`).join("")}</tbody></table></div>
+    `,
+  }))
+})
+
+app.post("/phoenix/organizations", async (req, res) => {
+  await createManualOrganization({
+    name: String(req.body.name || ""),
+    email: String(req.body.email || ""),
+    phone: String(req.body.phone || ""),
+    website: String(req.body.website || ""),
+    type: String(req.body.type || ""),
+    notes: String(req.body.notes || ""),
+  })
+  res.redirect("/phoenix/organizations")
+})
+
+app.post("/phoenix/organizations/:id", async (req, res) => {
+  await prisma.phoenixOrganization.update({
+    where: { id: req.params.id },
+    data: {
+      name: String(req.body.name || ""),
+      type: String(req.body.type || "") || null,
+      email: normalizeDashboardEmail(req.body.email),
+      phone: normalizeDashboardPhone(req.body.phone),
+      website: String(req.body.website || "") || null,
+      notes: String(req.body.notes || "") || null,
+    },
+  })
+  redirectBack(res, "/phoenix/organizations", req)
+})
+
+app.post("/phoenix/organizations/:id/delete", async (req, res) => {
+  await prisma.phoenixOrganization.delete({ where: { id: req.params.id } })
+  redirectBack(res, "/phoenix/organizations", req)
+})
+
+app.get("/phoenix/settings", async (_req, res) => {
+  await ensurePhoenixServices()
+  const services = await prisma.phoenixService.findMany({ orderBy: { name: "asc" } })
+  res.send(renderPhoenixShell({
+    active: "/phoenix/settings",
+    title: "Paramètres Phoenix",
+    subtitle: "Modifier les services, valeurs estimées et règles économiques de base.",
+    body: `<div class="panel"><table><thead><tr><th>Service</th><th>Catégorie</th><th>Valeur estimée</th><th>Actif</th><th></th></tr></thead><tbody>${services.map((service) => `
+      <tr>
+        <td><form id="service-${service.id}" method="post" action="/phoenix/services/${service.id}"></form><input form="service-${service.id}" name="name" value="${escapeHtml(service.name)}" /></td>
+        <td><input form="service-${service.id}" name="category" value="${escapeHtml(service.category)}" /></td>
+        <td><input form="service-${service.id}" name="estimatedValue" type="number" step="1" value="${service.estimatedValue}" /></td>
+        <td><select form="service-${service.id}" name="active"><option value="true" ${service.active ? "selected" : ""}>Oui</option><option value="false" ${!service.active ? "selected" : ""}>Non</option></select></td>
+        <td><button form="service-${service.id}" type="submit">Enregistrer</button></td>
+      </tr>
+    `).join("")}</tbody></table></div>`,
+  }))
+})
+
+app.post("/phoenix/services/:id", async (req, res) => {
+  await prisma.phoenixService.update({
+    where: { id: req.params.id },
+    data: {
+      name: String(req.body.name || ""),
+      category: String(req.body.category || ""),
+      estimatedValue: Number(req.body.estimatedValue || 0),
+      active: String(req.body.active) === "true",
+    },
+  })
+  redirectBack(res, "/phoenix/settings", req)
 })
 
 app.get("/", async (_req, res) => {
@@ -338,6 +988,7 @@ app.get("/", async (_req, res) => {
     }
 
     .side-link {
+      display: block;
       width: 100%;
       min-height: 44px;
       border-radius: 14px;
@@ -1254,11 +1905,12 @@ app.get("/", async (_req, res) => {
         <button class="side-link is-active" type="button" data-target-view="email-management">Gestion des e-mails</button>
         <button class="side-link" type="button" data-target-view="birthday-registration">Enregistrer un anniversaire</button>
         <button class="side-link" type="button" data-target-view="market-watch">Veille marché</button>
+        <a class="side-link" href="/phoenix">Phoenix CRM</a>
         <button class="side-link" type="button" data-target-view="ignored-senders">Expéditeurs ignorés</button>
       </nav>
 
       <div class="sidebar-footer">
-        Les fonctionnalités Echo sont séparées par espace de travail pour garder les traitements lisibles.
+        Echo, Spectra et Phoenix sont séparés par espace de travail pour garder les traitements lisibles.
       </div>
     </aside>
 

@@ -153,3 +153,149 @@ model MarketAlert {
   createdAt  DateTime @default(now())
   isRead     Boolean  @default(false)
 }
+
+model PhoenixService {
+  id             String   @id @default(uuid())
+  code           String   @unique
+  name           String
+  category       String
+  estimatedValue Float    @default(0)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  bookings      PhoenixBooking[]
+  opportunities PhoenixOpportunity[]
+}
+
+model PhoenixFamily {
+  id        String   @id @default(uuid())
+  name      String
+  email     String?
+  phone     String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  people        PhoenixPerson[]
+  bookings      PhoenixBooking[]
+  opportunities PhoenixOpportunity[]
+}
+
+model PhoenixPerson {
+  id              String   @id @default(uuid())
+  type            String
+  firstName       String?
+  lastName        String?
+  email           String?
+  phone           String?
+  birthDate       DateTime?
+  normalizedEmail String?
+  normalizedPhone String?
+  familyId        String?
+  organizationId  String?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  family              PhoenixFamily?       @relation(fields: [familyId], references: [id], onDelete: SetNull)
+  organization        PhoenixOrganization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  childBookings       PhoenixBooking[]     @relation("PhoenixBookingChild")
+  parentBookings      PhoenixBooking[]     @relation("PhoenixBookingParent")
+  personOpportunities PhoenixOpportunity[]
+
+  @@index([normalizedEmail])
+  @@index([normalizedPhone])
+  @@index([lastName, firstName])
+}
+
+model PhoenixOrganization {
+  id        String   @id @default(uuid())
+  name      String
+  email     String?
+  phone     String?
+  website   String?
+  type      String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contacts      PhoenixPerson[]
+  bookings      PhoenixBooking[]
+  opportunities PhoenixOpportunity[]
+}
+
+model PhoenixBooking {
+  id             String   @id @default(uuid())
+  serviceId      String
+  childId        String?
+  parentId       String?
+  familyId       String?
+  organizationId String?
+  importBatchId  String?
+  bookingDate    DateTime?
+  amount         Float?
+  sourceType     String
+  sourceLabel    String?
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  service      PhoenixService       @relation(fields: [serviceId], references: [id])
+  child        PhoenixPerson?       @relation("PhoenixBookingChild", fields: [childId], references: [id], onDelete: SetNull)
+  parent       PhoenixPerson?       @relation("PhoenixBookingParent", fields: [parentId], references: [id], onDelete: SetNull)
+  family       PhoenixFamily?       @relation(fields: [familyId], references: [id], onDelete: SetNull)
+  organization PhoenixOrganization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  importBatch  PhoenixImportBatch?  @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+}
+
+model PhoenixImportBatch {
+  id           String   @id @default(uuid())
+  filename     String
+  importType   String
+  status       String   @default("PREVIEW")
+  rawRows      Json
+  mapping      Json?
+  rowCount      Int      @default(0)
+  importedCount Int      @default(0)
+  duplicateCount Int     @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  bookings PhoenixBooking[]
+}
+
+model PhoenixOpportunity {
+  id             String   @id @default(uuid())
+  serviceId      String
+  personId       String?
+  familyId       String?
+  organizationId String?
+  type           String
+  title          String
+  reason         String
+  status         String   @default("OPEN")
+  priority       String   @default("MEDIUM")
+  estimatedRevenue Float  @default(0)
+  dueAt          DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  service       PhoenixService       @relation(fields: [serviceId], references: [id])
+  person        PhoenixPerson?       @relation(fields: [personId], references: [id], onDelete: SetNull)
+  family        PhoenixFamily?       @relation(fields: [familyId], references: [id], onDelete: SetNull)
+  organization  PhoenixOrganization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  messages      PhoenixGeneratedMessage[]
+}
+
+model PhoenixGeneratedMessage {
+  id            String   @id @default(uuid())
+  opportunityId String
+  channel       String
+  subject       String?
+  content       String
+  status        String   @default("DRAFT")
+  createdAt     DateTime @default(now())
+
+  opportunity PhoenixOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+}
