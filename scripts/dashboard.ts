@@ -1046,78 +1046,109 @@ app.get("/phoenix/families", async (_req, res) => {
   }))
 })
 
-app.get("/phoenix/organizations", async (_req, res) => {
+app.get("/phoenix/organizations", async (req, res) => {
+  const search = String(req.query.q || "").trim()
   const organizations = await prisma.phoenixOrganization.findMany({
-    orderBy: { name: "asc" },
+    where: search ? {
+      OR: [
+        { name: { contains: search, mode: "insensitive" } },
+        { companyName: { contains: search, mode: "insensitive" } },
+        { contactFirstName: { contains: search, mode: "insensitive" } },
+        { contactLastName: { contains: search, mode: "insensitive" } },
+        { email: { contains: search, mode: "insensitive" } },
+        { phone: { contains: search, mode: "insensitive" } },
+        { address: { contains: search, mode: "insensitive" } },
+      ],
+    } : undefined,
+    orderBy: [{ companyName: "asc" }, { contactLastName: "asc" }, { contactFirstName: "asc" }, { name: "asc" }],
     include: { bookings: { include: { service: true } }, opportunities: true },
   })
   res.send(renderPhoenixShell({
     active: "/phoenix/organizations",
     title: "Organisations",
-    subtitle: "Institutions et entreprises à relancer pour animations, team building, Noël, spectacle ou événement annuel.",
+    subtitle: "Entreprises, institutions et contacts professionnels.",
     body: `
       <div class="panel">
         <div class="panel-header"><h2>Ajouter une organisation</h2></div>
         <form method="post" action="/phoenix/organizations">
           <div class="form-grid">
-            <label>Nom<input name="name" required /></label>
-            <label>Type<input name="type" placeholder="Entreprise, école, institution..." /></label>
-            <label>E-mail<input name="email" type="email" /></label>
-            <label>Téléphone<input name="phone" /></label>
+            <label>Entreprise<input name="companyName" required /></label>
+            <label>Nom<input name="contactLastName" /></label>
+            <label>Prénom<input name="contactFirstName" /></label>
             <label class="full">Adresse<input name="address" /></label>
-            <label>Site web<input name="website" /></label>
-            <label class="full">Notes<textarea name="notes"></textarea></label>
+            <label>Téléphone<input name="phone" /></label>
+            <label>E-mail<input name="email" type="email" /></label>
           </div>
           <div class="actions" style="margin-top:16px;"><button type="submit">Ajouter</button></div>
         </form>
       </div>
-      <div class="panel"><table><thead><tr><th>Organisation</th><th>Historique</th><th>Potentiel</th><th>Modifier</th></tr></thead><tbody>${organizations.map((organization) => `
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Liste des organisations</h2>
+          <form method="get" action="/phoenix/organizations" class="actions">
+            <input name="q" value="${escapeHtml(search)}" placeholder="Rechercher une personne, une entreprise..." />
+            <button type="submit">Rechercher</button>
+            ${search ? `<a class="button secondary" href="/phoenix/organizations">Réinitialiser</a>` : ""}
+          </form>
+        </div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Entreprise</th><th>Nom</th><th>Prénom</th><th>Adresse</th><th>Téléphone</th><th>E-mail</th><th>Modifier</th></tr></thead>
+          <tbody>${organizations.map((organization) => `
         <tr>
-          <td><strong>${escapeHtml(organization.name)}</strong><br /><span class="muted">${escapeHtml([organization.type, organization.email, organization.phone, organization.address].filter(Boolean).join(" · "))}</span></td>
-          <td>${organization.bookings.map((booking) => `<span class="badge">${escapeHtml(booking.service.name)}</span>`).join(" ") || "Aucun historique"}</td>
-          <td>${formatCurrency(organization.opportunities.filter((item) => item.status === "OPEN").reduce((sum, item) => sum + item.estimatedRevenue, 0))}</td>
+          <td><strong>${escapeHtml(organization.companyName || organization.name)}</strong></td>
+          <td>${escapeHtml(organization.contactLastName || "")}</td>
+          <td>${escapeHtml(organization.contactFirstName || "")}</td>
+          <td>${escapeHtml(organization.address || "")}</td>
+          <td>${escapeHtml(organization.phone || "")}</td>
+          <td>${escapeHtml(organization.email || "")}</td>
           <td>
             <form method="post" action="/phoenix/organizations/${organization.id}" class="form-grid">
-              <input name="name" value="${escapeHtml(organization.name)}" />
-              <input name="type" value="${escapeHtml(organization.type || "")}" />
-              <input name="email" value="${escapeHtml(organization.email || "")}" />
-              <input name="phone" value="${escapeHtml(organization.phone || "")}" />
+              <label>Entreprise<input name="companyName" value="${escapeHtml(organization.companyName || organization.name)}" /></label>
+              <label>Nom<input name="contactLastName" value="${escapeHtml(organization.contactLastName || "")}" /></label>
+              <label>Prénom<input name="contactFirstName" value="${escapeHtml(organization.contactFirstName || "")}" /></label>
               <input class="full" name="address" value="${escapeHtml(organization.address || "")}" />
-              <input class="full" name="website" value="${escapeHtml(organization.website || "")}" />
-              <textarea class="full" name="notes">${escapeHtml(organization.notes || "")}</textarea>
+              <input name="phone" value="${escapeHtml(organization.phone || "")}" />
+              <input name="email" value="${escapeHtml(organization.email || "")}" />
               <button class="full" type="submit">Enregistrer</button>
             </form>
             <form method="post" action="/phoenix/organizations/${organization.id}/delete"><button class="danger" data-confirm="Supprimer cette organisation ?" type="submit">Supprimer</button></form>
           </td>
         </tr>`).join("")}</tbody></table></div>
+      </div>
     `,
   }))
 })
 
 app.post("/phoenix/organizations", async (req, res) => {
+  const companyName = String(req.body.companyName || "").trim()
+  const contactFirstName = String(req.body.contactFirstName || "").trim()
+  const contactLastName = String(req.body.contactLastName || "").trim()
   await createManualOrganization({
-    name: String(req.body.name || ""),
+    name: companyName || [contactFirstName, contactLastName].filter(Boolean).join(" ") || "Organisation sans nom",
+    companyName,
+    contactFirstName,
+    contactLastName,
     email: String(req.body.email || ""),
     phone: String(req.body.phone || ""),
     address: String(req.body.address || ""),
-    website: String(req.body.website || ""),
-    type: String(req.body.type || ""),
-    notes: String(req.body.notes || ""),
   })
   res.redirect("/phoenix/organizations")
 })
 
 app.post("/phoenix/organizations/:id", async (req, res) => {
+  const companyName = String(req.body.companyName || "").trim()
+  const contactFirstName = String(req.body.contactFirstName || "").trim()
+  const contactLastName = String(req.body.contactLastName || "").trim()
   await prisma.phoenixOrganization.update({
     where: { id: req.params.id },
     data: {
-      name: String(req.body.name || ""),
-      type: String(req.body.type || "") || null,
+      name: companyName || [contactFirstName, contactLastName].filter(Boolean).join(" ") || "Organisation sans nom",
+      companyName: companyName || null,
+      contactFirstName: contactFirstName || null,
+      contactLastName: contactLastName || null,
       email: normalizeDashboardEmail(req.body.email),
       phone: normalizeDashboardPhone(req.body.phone),
       address: String(req.body.address || "") || null,
-      website: String(req.body.website || "") || null,
-      notes: String(req.body.notes || "") || null,
     },
   })
   redirectBack(res, "/phoenix/organizations", req)

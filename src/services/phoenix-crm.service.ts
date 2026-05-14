@@ -361,7 +361,7 @@ export async function createManualPerson(data: { type: string; firstName?: strin
   return prisma.phoenixPerson.create({ data: { ...data, normalizedEmail, normalizedPhone, familyId: family?.id } })
 }
 
-export async function createManualOrganization(data: { name: string; email?: string; phone?: string; address?: string; website?: string; type?: string; notes?: string }) {
+export async function createManualOrganization(data: { name: string; companyName?: string; contactFirstName?: string; contactLastName?: string; email?: string; phone?: string; address?: string; website?: string; type?: string; notes?: string }) {
   return prisma.phoenixOrganization.create({ data })
 }
 
