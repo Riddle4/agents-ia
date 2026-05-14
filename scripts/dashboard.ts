@@ -486,11 +486,11 @@ function renderPhoenixImportPreviewPage(params: { batch: any; headers: string[];
           </form>
         </div>
         <div class="panel">
-          <div class="panel-header"><h2>Aperçu des données</h2></div>
+          <div class="panel-header"><h2>Aperçu des données</h2><span class="badge">${params.headers.length} colonnes</span></div>
           <div style="overflow:auto;">
             <table>
-              <thead><tr>${params.headers.slice(0, 8).map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead>
-              <tbody>${params.rows.slice(0, 12).map((row) => `<tr>${params.headers.slice(0, 8).map((header) => `<td>${escapeHtml(row[header] || "")}</td>`).join("")}</tr>`).join("")}</tbody>
+              <thead><tr>${params.headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead>
+              <tbody>${params.rows.slice(0, 12).map((row) => `<tr>${params.headers.map((header) => `<td>${escapeHtml(row[header] || "")}</td>`).join("")}</tr>`).join("")}</tbody>
             </table>
           </div>
         </div>

@@ -95,13 +95,24 @@ export function parseExcel(buffer: Buffer): ParsedWorkbook {
   const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true })
   const sheetName = workbook.SheetNames[0]
   const sheet = workbook.Sheets[sheetName]
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" })
-  const headers = rows.length ? Object.keys(rows[0]) : []
+  const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "", raw: false })
+  const headerIndex = matrix.findIndex((row) => row.some((cell) => cleanText(normalizeCell(cell))))
+
+  if (headerIndex === -1) {
+    return { headers: [], rows: [] }
+  }
+
+  const headers = matrix[headerIndex]
+    .map((cell, index) => cleanText(normalizeCell(cell)) || `Colonne ${index + 1}`)
+    .map((header, index, allHeaders) => makeUniqueHeader(header, index, allHeaders))
+
+  const rows = matrix.slice(headerIndex + 1).map((row) => {
+    return Object.fromEntries(headers.map((header, index) => [header, normalizeCell(row[index])]))
+  }).filter((row) => Object.values(row).some((value) => cleanText(value)))
+
   return {
     headers,
-    rows: rows.map((row) => {
-      return Object.fromEntries(Object.entries(row).map(([key, value]) => [key, normalizeCell(value)]))
-    }),
+    rows,
   }
 }
 
@@ -432,6 +443,11 @@ function hasUsefulData(row: NormalizedRow) {
 function normalizeCell(value: unknown) {
   if (value instanceof Date) return value.toISOString().slice(0, 10)
   return String(value ?? "").trim()
+}
+
+function makeUniqueHeader(header: string, index: number, allHeaders: string[]) {
+  const previousCount = allHeaders.slice(0, index).filter((item) => item === header).length
+  return previousCount === 0 ? header : `${header} ${previousCount + 1}`
 }
 
 function cleanText(value?: string) {
