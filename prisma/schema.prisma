@@ -191,11 +191,15 @@ model PhoenixPerson {
   type            String
   firstName       String?
   lastName        String?
+  stageName       String?
   email           String?
   phone           String?
   birthDate       DateTime?
+  entryDate       DateTime?
   address         String?
   magicLevel      String?
+  parentFirstName String?
+  parentLastName  String?
   normalizedEmail String?
   normalizedPhone String?
   familyId        String?

@@ -163,6 +163,18 @@ function formatDate(value: Date | string | null | undefined) {
   return new Date(value).toLocaleDateString("fr-CH")
 }
 
+function formatDateInput(value: Date | string | null | undefined) {
+  if (!value) return ""
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ""
+  return date.toISOString().slice(0, 10)
+}
+
+function parseDashboardDate(value: unknown) {
+  const text = String(value || "").trim()
+  return text ? new Date(text) : null
+}
+
 function normalizeDashboardEmail(value: unknown) {
   return String(value || "").trim().toLowerCase() || null
 }
@@ -867,8 +879,22 @@ app.post("/phoenix/opportunities/:id/delete", async (req, res) => {
   redirectBack(res, "/phoenix/opportunities", req)
 })
 
-app.get("/phoenix/clients", async (_req, res) => {
+app.get("/phoenix/clients", async (req, res) => {
+  const search = String(req.query.q || "").trim()
   const people = await prisma.phoenixPerson.findMany({
+    where: search ? {
+      OR: [
+        { firstName: { contains: search, mode: "insensitive" } },
+        { lastName: { contains: search, mode: "insensitive" } },
+        { stageName: { contains: search, mode: "insensitive" } },
+        { magicLevel: { contains: search, mode: "insensitive" } },
+        { parentFirstName: { contains: search, mode: "insensitive" } },
+        { parentLastName: { contains: search, mode: "insensitive" } },
+        { email: { contains: search, mode: "insensitive" } },
+        { phone: { contains: search, mode: "insensitive" } },
+        { address: { contains: search, mode: "insensitive" } },
+      ],
+    } : undefined,
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     include: { family: true, organization: true },
   })
@@ -881,39 +907,64 @@ app.get("/phoenix/clients", async (_req, res) => {
         <div class="panel-header"><h2>Ajouter une personne</h2></div>
         <form method="post" action="/phoenix/people">
           <div class="form-grid">
-            <label>Type<select name="type"><option value="PARENT">Parent</option><option value="CHILD">Enfant</option><option value="CONTACT">Contact organisation</option></select></label>
-            <label>Prénom<input name="firstName" /></label>
             <label>Nom<input name="lastName" /></label>
-            <label>E-mail<input name="email" type="email" /></label>
-            <label>Téléphone<input name="phone" /></label>
-            <label>Adresse du client<input name="address" /></label>
+            <label>Prénom<input name="firstName" /></label>
+            <label>Nom de scène<input name="stageName" /></label>
             <label>Niveau de magie<input name="magicLevel" placeholder="Débutant, intermédiaire..." /></label>
-            <label class="full">Notes<textarea name="notes"></textarea></label>
+            <label>Date d'entrée<input type="date" name="entryDate" /></label>
+            <label>Date de naissance<input type="date" name="birthDate" /></label>
+            <label>Nom parent<input name="parentLastName" /></label>
+            <label>Prénom parent<input name="parentFirstName" /></label>
+            <label class="full">Adresse<input name="address" /></label>
+            <label>Téléphone<input name="phone" /></label>
+            <label>E-mail<input name="email" type="email" /></label>
           </div>
           <div class="actions" style="margin-top:16px;"><button type="submit">Ajouter</button></div>
         </form>
       </div>
-      <div class="panel"><div class="panel-header"><h2>Liste clients</h2></div>
-        <table><thead><tr><th>Personne</th><th>Contact</th><th>Liens</th><th>Modifier</th></tr></thead><tbody>
+      <div class="panel">
+        <div class="panel-header">
+          <div><h2>Liste clients privés</h2><div class="subtitle">${people.length} résultat(s)</div></div>
+          <form method="get" action="/phoenix/clients" class="actions">
+            <input name="q" value="${escapeHtml(search)}" placeholder="Rechercher nom, parent, email, téléphone..." />
+            <button type="submit">Rechercher</button>
+            <a class="button secondary" href="/phoenix/clients">Effacer</a>
+          </form>
+        </div>
+        <div style="overflow-x:auto;">
+        <table style="min-width:1500px;"><thead><tr><th>Nom</th><th>Prénom</th><th>Nom de scène</th><th>Niveau</th><th>Date d'entrée</th><th>Date naissance</th><th>Nom parent</th><th>Prénom parent</th><th>Adresse</th><th>Téléphone</th><th>E-mail</th><th>Modifier</th></tr></thead><tbody>
           ${people.map((person) => `<tr>
-            <td><span class="badge">${escapeHtml(person.type)}</span><br /><strong>${escapeHtml([person.firstName, person.lastName].filter(Boolean).join(" ") || "Sans nom")}</strong></td>
-            <td>${escapeHtml(person.email || "")}<br /><span class="muted">${escapeHtml([person.phone, person.address, person.magicLevel ? `Niveau: ${person.magicLevel}` : ""].filter(Boolean).join(" · "))}</span></td>
-            <td>${escapeHtml(person.family?.name || person.organization?.name || "")}</td>
+            <td>${escapeHtml(person.lastName || "")}</td>
+            <td>${escapeHtml(person.firstName || "")}</td>
+            <td>${escapeHtml(person.stageName || "")}</td>
+            <td>${escapeHtml(person.magicLevel || "")}</td>
+            <td>${formatDate(person.entryDate)}</td>
+            <td>${formatDate(person.birthDate)}</td>
+            <td>${escapeHtml(person.parentLastName || "")}</td>
+            <td>${escapeHtml(person.parentFirstName || "")}</td>
+            <td>${escapeHtml(person.address || "")}</td>
+            <td>${escapeHtml(person.phone || "")}</td>
+            <td>${escapeHtml(person.email || "")}</td>
             <td>
               <form method="post" action="/phoenix/people/${person.id}" class="form-grid">
-                <input name="firstName" value="${escapeHtml(person.firstName || "")}" />
                 <input name="lastName" value="${escapeHtml(person.lastName || "")}" />
-                <input name="email" value="${escapeHtml(person.email || "")}" />
-                <input name="phone" value="${escapeHtml(person.phone || "")}" />
-                <input name="address" value="${escapeHtml(person.address || "")}" />
+                <input name="firstName" value="${escapeHtml(person.firstName || "")}" />
+                <input name="stageName" value="${escapeHtml(person.stageName || "")}" />
                 <input name="magicLevel" value="${escapeHtml(person.magicLevel || "")}" />
-                <textarea class="full" name="notes">${escapeHtml(person.notes || "")}</textarea>
+                <input type="date" name="entryDate" value="${formatDateInput(person.entryDate)}" />
+                <input type="date" name="birthDate" value="${formatDateInput(person.birthDate)}" />
+                <input name="parentLastName" value="${escapeHtml(person.parentLastName || "")}" />
+                <input name="parentFirstName" value="${escapeHtml(person.parentFirstName || "")}" />
+                <input class="full" name="address" value="${escapeHtml(person.address || "")}" />
+                <input name="phone" value="${escapeHtml(person.phone || "")}" />
+                <input name="email" value="${escapeHtml(person.email || "")}" />
                 <button class="full" type="submit">Enregistrer</button>
               </form>
               <form method="post" action="/phoenix/people/${person.id}/delete"><button class="danger" data-confirm="Supprimer cette personne ?" type="submit">Supprimer</button></form>
             </td>
           </tr>`).join("")}
         </tbody></table>
+        </div>
       </div>
     `,
   }))
@@ -937,14 +988,18 @@ app.get("/phoenix/children", async (_req, res) => {
 
 app.post("/phoenix/people", async (req, res) => {
   await createManualPerson({
-    type: String(req.body.type || "PARENT"),
+    type: "CHILD",
     firstName: String(req.body.firstName || ""),
     lastName: String(req.body.lastName || ""),
+    stageName: String(req.body.stageName || ""),
     email: String(req.body.email || ""),
     phone: String(req.body.phone || ""),
     address: String(req.body.address || ""),
     magicLevel: String(req.body.magicLevel || ""),
-    notes: String(req.body.notes || ""),
+    entryDate: parseDashboardDate(req.body.entryDate),
+    birthDate: parseDashboardDate(req.body.birthDate),
+    parentFirstName: String(req.body.parentFirstName || ""),
+    parentLastName: String(req.body.parentLastName || ""),
   })
   res.redirect("/phoenix/clients")
 })
@@ -955,13 +1010,17 @@ app.post("/phoenix/people/:id", async (req, res) => {
     data: {
       firstName: String(req.body.firstName || "") || null,
       lastName: String(req.body.lastName || "") || null,
+      stageName: String(req.body.stageName || "") || null,
       email: normalizeDashboardEmail(req.body.email),
       phone: normalizeDashboardPhone(req.body.phone),
       address: String(req.body.address || "") || null,
       magicLevel: String(req.body.magicLevel || "") || null,
+      entryDate: parseDashboardDate(req.body.entryDate),
+      birthDate: parseDashboardDate(req.body.birthDate),
+      parentFirstName: String(req.body.parentFirstName || "") || null,
+      parentLastName: String(req.body.parentLastName || "") || null,
       normalizedEmail: normalizeDashboardEmail(req.body.email),
       normalizedPhone: normalizeDashboardPhone(req.body.phone),
-      notes: String(req.body.notes || "") || null,
     },
   })
   redirectBack(res, "/phoenix/clients", req)

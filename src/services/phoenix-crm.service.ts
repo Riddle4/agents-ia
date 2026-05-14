@@ -354,7 +354,7 @@ export async function generateOpportunityMessage(opportunityId: string, channel:
   })
 }
 
-export async function createManualPerson(data: { type: string; firstName?: string; lastName?: string; email?: string; phone?: string; address?: string; magicLevel?: string; notes?: string }) {
+export async function createManualPerson(data: { type: string; firstName?: string; lastName?: string; stageName?: string; email?: string; phone?: string; address?: string; magicLevel?: string; entryDate?: Date | null; birthDate?: Date | null; parentFirstName?: string; parentLastName?: string; notes?: string }) {
   const normalizedEmail = normalizeEmail(data.email)
   const normalizedPhone = normalizePhone(data.phone)
   const family = data.type === "CHILD" || data.type === "PARENT" ? await findOrCreateFamily(data.lastName, data.email, data.phone, data.address) : null
