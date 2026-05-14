@@ -1,0 +1,3 @@
+ALTER TABLE "PhoenixPerson" ADD COLUMN "tags" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];
+ALTER TABLE "PhoenixOrganization" ADD COLUMN "tags" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];
+ALTER TABLE "PhoenixSession" ADD COLUMN "periodLabel" TEXT;

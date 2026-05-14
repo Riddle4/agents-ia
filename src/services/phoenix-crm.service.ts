@@ -354,14 +354,14 @@ export async function generateOpportunityMessage(opportunityId: string, channel:
   })
 }
 
-export async function createManualPerson(data: { type: string; firstName?: string; lastName?: string; stageName?: string; email?: string; phone?: string; address?: string; magicLevel?: string; entryDate?: Date | null; birthDate?: Date | null; parentFirstName?: string; parentLastName?: string; notes?: string }) {
+export async function createManualPerson(data: { type: string; firstName?: string; lastName?: string; stageName?: string; email?: string; phone?: string; address?: string; magicLevel?: string; entryDate?: Date | null; birthDate?: Date | null; parentFirstName?: string; parentLastName?: string; tags?: string[]; notes?: string }) {
   const normalizedEmail = normalizeEmail(data.email)
   const normalizedPhone = normalizePhone(data.phone)
   const family = data.type === "CHILD" || data.type === "PARENT" ? await findOrCreateFamily(data.lastName, data.email, data.phone, data.address) : null
   return prisma.phoenixPerson.create({ data: { ...data, normalizedEmail, normalizedPhone, familyId: family?.id } })
 }
 
-export async function createManualOrganization(data: { name: string; companyName?: string; contactFirstName?: string; contactLastName?: string; email?: string; phone?: string; address?: string; website?: string; type?: string; notes?: string }) {
+export async function createManualOrganization(data: { name: string; companyName?: string; contactFirstName?: string; contactLastName?: string; email?: string; phone?: string; address?: string; website?: string; type?: string; tags?: string[]; notes?: string }) {
   return prisma.phoenixOrganization.create({ data })
 }
 
