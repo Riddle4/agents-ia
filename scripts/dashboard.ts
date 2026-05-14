@@ -178,15 +178,7 @@ function redirectBack(res: express.Response, fallback: string, req?: express.Req
 function phoenixNav(active: string) {
   const items = [
     ["/phoenix", "Dashboard"],
-    ["/phoenix/import", "Import Excel"],
-    ["/phoenix/courses", "Cours collectifs"],
-    ["/phoenix/stages", "Stages & événements"],
-    ["/phoenix/animations", "Animations"],
-    ["/phoenix/agenda", "Agenda"],
-    ["/phoenix/registrations/new", "Nouvelle inscription"],
-    ["/phoenix/clients", "Clients"],
-    ["/phoenix/families", "Familles"],
-    ["/phoenix/children", "Enfants"],
+    ["/phoenix/clients", "Clients privés"],
     ["/phoenix/organizations", "Organisations"],
     ["/phoenix/opportunities", "Opportunités"],
     ["/phoenix/settings", "Paramètres"],
@@ -652,7 +644,6 @@ app.post("/market-analysis/run", async (_req, res) => {
 })
 
 app.get("/phoenix", async (_req, res) => {
-  await ensurePhoenixOperationalData()
   const snapshot = await loadPhoenixDashboard()
   res.send(renderPhoenixDashboardPage(snapshot))
 })
@@ -883,8 +874,8 @@ app.get("/phoenix/clients", async (_req, res) => {
   })
   res.send(renderPhoenixShell({
     active: "/phoenix/clients",
-    title: "Clients",
-    subtitle: "Parents, contacts, enfants et personnes importées ou ajoutées manuellement.",
+    title: "Clients privés",
+    subtitle: "Familles, parents, enfants et contacts privés ajoutés manuellement.",
     body: `
       <div class="panel">
         <div class="panel-header"><h2>Ajouter une personne</h2></div>
