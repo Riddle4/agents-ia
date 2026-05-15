@@ -122,6 +122,143 @@ function extractClientMessage(description: string) {
   return afterMessageMarker.trim()
 }
 
+function getTaskDisplayData(task: any) {
+  const description = task.description || ""
+  const suggestedReply = extractSuggestedReply(description)
+  const internalInfoRequest = extractInternalInfoRequest(description)
+  const clientMessage = extractClientMessage(description)
+  const customerName = [
+    task.customer?.firstName,
+    task.customer?.lastName,
+  ].filter(Boolean).join(" ")
+
+  return {
+    suggestedReply,
+    internalInfoRequest,
+    clientMessage,
+    displayName: customerName || "Nom non détecté",
+    displayEmail: task.customer?.email || "Email inconnu",
+    workflowStatus: internalInfoRequest
+      ? "Information interne requise"
+      : suggestedReply
+        ? "Réponse prête"
+        : "À préparer",
+  }
+}
+
+function renderTaskList(tasks: any[], openTaskId = "") {
+  if (tasks.length === 0) {
+    return `<div class="empty">Aucune tâche pour le moment. Echo est en veille active.</div>`
+  }
+
+  return `
+    <div class="task-list">
+      <div class="task-list-head">
+        <span>Client</span>
+        <span>Message</span>
+        <span>Type</span>
+        <span>Statut IA</span>
+        <span>Priorité</span>
+      </div>
+
+      ${tasks
+        .map((task) => {
+          const data = getTaskDisplayData(task)
+          const isOpen = task.id === openTaskId
+          const preview =
+            data.clientMessage.length > 150
+              ? `${data.clientMessage.slice(0, 150)}...`
+              : data.clientMessage
+
+          return `
+            <div class="task-list-item ${isOpen ? "is-open" : ""}" id="task-${escapeHtml(task.id)}">
+              <div class="task-list-row" role="button" tabindex="0" aria-expanded="${isOpen ? "true" : "false"}">
+                <div>
+                  <div class="task-list-main">${escapeHtml(data.displayName)}</div>
+                  <div class="task-list-sub">${escapeHtml(data.displayEmail)}</div>
+                </div>
+
+                <div>
+                  <div class="task-list-main">${escapeHtml(task.title)}</div>
+                  <div class="task-list-sub">${escapeHtml(preview)}</div>
+                </div>
+
+                <span class="badge agent-badge">${escapeHtml(task.taskType)}</span>
+                <span class="badge status-badge task-status-badge">${escapeHtml(data.workflowStatus)}</span>
+                <span class="badge priority-${escapeHtml(task.priority)}">${escapeHtml(task.priority)}</span>
+              </div>
+
+              <div class="task-list-detail">
+                ${renderTaskDetailContent(task)}
+              </div>
+            </div>
+          `
+        })
+        .join("")}
+    </div>
+  `
+}
+
+function renderTaskDetailContent(task: any) {
+  const data = getTaskDisplayData(task)
+
+  return `
+    <div class="task-detail-grid">
+      <div class="meta-box">
+        <strong>Échéance</strong>
+        ${task.dueAt ? task.dueAt.toLocaleDateString("fr-CH") : "-"}
+      </div>
+
+      <div class="meta-box">
+        <strong>Créée le</strong>
+        ${task.createdAt.toLocaleString("fr-CH")}
+      </div>
+    </div>
+
+      <details class="details-box" open>
+        <summary>Message client complet</summary>
+        <div class="message-box">${escapeHtml(data.clientMessage)}</div>
+      </details>
+
+      ${
+        data.internalInfoRequest
+          ? `<details class="details-box" open>
+              <summary>Information interne requise</summary>
+              <div class="message-box">${escapeHtml(data.internalInfoRequest)}</div>
+              <form class="human-info-form" method="POST" action="/tasks/${task.id}/generate-reply">
+                <textarea class="human-info-input" name="humanProvidedInfo" placeholder="Ajoutez ici les informations métier à utiliser pour générer la réponse client : description, tarif, durée, conditions, disponibilité, etc." required></textarea>
+                <div class="human-info-actions">
+                  <button class="copy-button" type="submit">Générer la réponse IA</button>
+                </div>
+              </form>
+            </details>`
+          : ""
+      }
+
+      <details class="details-box" open>
+        <summary>Réponse IA complète</summary>
+        ${
+          data.suggestedReply
+            ? `<textarea class="ai-reply" readonly>${escapeHtml(data.suggestedReply)}</textarea>`
+            : `<span class="no-reply">Aucune réponse IA disponible.</span>`
+        }
+      </details>
+
+      <div class="actions">
+        ${
+          data.suggestedReply
+            ? `<button class="copy-button" onclick="copyReply(this)">Copier la réponse IA</button>
+               <div class="reply-hidden" style="display:none;">${escapeHtml(data.suggestedReply)}</div>`
+            : ""
+        }
+
+        <form method="POST" action="/tasks/${task.id}/done">
+          <button class="done-button" type="submit">Marquer comme traité</button>
+        </form>
+      </div>
+  `
+}
+
 const marketDomainLabels: Record<MarketDomain, string> = {
   ANNIVERSAIRE: "Anniversaires",
   STAGE: "Stages",
@@ -220,6 +357,7 @@ function renderPhoenixShell(params: { active: string; title: string; subtitle: s
     body {
       margin: 0;
       min-height: 100vh;
+      overflow-x: hidden;
       font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background:
         radial-gradient(circle at top left, rgba(0, 153, 255, 0.22), transparent 32%),
@@ -949,7 +1087,7 @@ app.post("/tasks/:id/generate-reply", async (req, res) => {
 
   await generateReplyForTaskWithHumanInfo(req.params.id, humanProvidedInfo)
 
-  res.redirect("/")
+  res.redirect(`/?task=${encodeURIComponent(req.params.id)}#email-management`)
 })
 
 app.post("/ignored-senders", async (req, res) => {
@@ -1680,7 +1818,7 @@ app.post("/phoenix/services/:id", async (req, res) => {
   redirectBack(res, "/phoenix/settings", req)
 })
 
-app.get("/", async (_req, res) => {
+app.get("/", async (req, res) => {
   const tasks = await prisma.task.findMany({
     where: {
       status: "TODO",
@@ -1701,6 +1839,7 @@ app.get("/", async (_req, res) => {
     STAGE: await loadMarketDomainResults("STAGE"),
     COURS: await loadMarketDomainResults("COURS"),
   }
+  const selectedTaskId = String(req.query.task || "")
 
   const totalTasks = tasks.length
   const highTasks = tasks.filter((task) => task.priority === "HIGH").length
@@ -1723,6 +1862,7 @@ app.get("/", async (_req, res) => {
     body {
       margin: 0;
       min-height: 100vh;
+      overflow-x: hidden;
       font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background:
         radial-gradient(circle at top left, rgba(0, 153, 255, 0.22), transparent 32%),
@@ -1735,11 +1875,17 @@ app.get("/", async (_req, res) => {
       display: grid;
       grid-template-columns: 280px 1fr;
       min-height: 100vh;
+      min-width: 0;
+    }
+
+    .layout > * {
+      min-width: 0;
     }
 
     .sidebar {
       position: sticky;
       top: 0;
+      z-index: 10;
       height: 100vh;
       padding: 26px 20px;
       background: rgba(255,255,255,0.045);
@@ -1816,9 +1962,11 @@ app.get("/", async (_req, res) => {
 
     .main {
       width: min(1380px, calc(100% - 68px));
+      max-width: 100%;
       margin: 0 auto;
       padding: 34px 0;
       min-width: 0;
+      overflow-x: hidden;
     }
 
     .topbar {
@@ -1873,6 +2021,7 @@ app.get("/", async (_req, res) => {
 
     .app-section {
       display: none;
+      min-width: 0;
     }
 
     .app-section.is-active {
@@ -2030,6 +2179,7 @@ app.get("/", async (_req, res) => {
     }
 
     .settings-panel {
+      min-width: 0;
       padding: 20px;
       border-radius: 22px;
       background: rgba(255,255,255,0.055);
@@ -2347,6 +2497,109 @@ app.get("/", async (_req, res) => {
       color: #b7c4d8;
     }
 
+    .task-list {
+      display: grid;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .task-list-item {
+      min-width: 0;
+    }
+
+    .task-list-head,
+    .task-list-row {
+      display: grid;
+      grid-template-columns: minmax(130px, 0.95fr) minmax(220px, 2fr) minmax(100px, 0.7fr) minmax(160px, 0.9fr) 70px;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .task-list-head {
+      padding: 0 16px 6px;
+      color: #91a2bd;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .task-list-row {
+      width: 100%;
+      padding: 16px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.055);
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: 0 14px 40px rgba(0,0,0,0.16);
+      cursor: pointer;
+      transition: 0.16s ease;
+    }
+
+    .task-list-row:focus-visible {
+      outline: 2px solid rgba(74, 180, 255, 0.8);
+      outline-offset: 3px;
+    }
+
+    .task-list-row > * {
+      min-width: 0;
+    }
+
+    .task-list-row:hover {
+      border-color: rgba(74, 180, 255, 0.38);
+      background: rgba(255,255,255,0.075);
+      transform: translateY(-1px);
+    }
+
+    .task-list-main {
+      color: #f8fbff;
+      font-weight: 850;
+      overflow-wrap: anywhere;
+    }
+
+    .task-list-sub {
+      color: #91a2bd;
+      font-size: 13px;
+      line-height: 1.45;
+      margin-top: 4px;
+      overflow-wrap: anywhere;
+    }
+
+    .task-status-badge {
+      white-space: normal;
+      line-height: 1.25;
+      text-align: center;
+      overflow-wrap: anywhere;
+    }
+
+    .task-list-detail {
+      display: none;
+      min-width: 0;
+      max-width: 100%;
+      overflow-x: hidden;
+      margin: -2px 0 14px;
+      padding: 18px;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-top: 0;
+      border-radius: 0 0 18px 18px;
+      background: rgba(255,255,255,0.04);
+    }
+
+    .task-list-item.is-open .task-list-row {
+      border-color: rgba(74, 180, 255, 0.42);
+      border-radius: 18px 18px 0 0;
+      background: rgba(0, 132, 255, 0.12);
+    }
+
+    .task-list-item.is-open .task-list-detail {
+      display: block;
+    }
+
+    .task-detail-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
     .task-card {
       background: rgba(255,255,255,0.06);
       border: 1px solid rgba(255,255,255,0.085);
@@ -2473,12 +2726,15 @@ app.get("/", async (_req, res) => {
       border-top: 1px solid rgba(255,255,255,0.08);
       line-height: 1.55;
       white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
       font-size: 14px;
       color: #c4d0e4;
     }
 
     .ai-reply {
       width: calc(100% - 34px);
+      max-width: calc(100% - 34px);
       min-height: 260px;
       margin: 0 17px 17px;
       padding: 15px;
@@ -2489,6 +2745,7 @@ app.get("/", async (_req, res) => {
       resize: vertical;
       box-sizing: border-box;
       white-space: pre-wrap;
+      overflow-wrap: anywhere;
       color: #eef5ff;
       background: rgba(255,255,255,0.055);
       outline: none;
@@ -2500,6 +2757,7 @@ app.get("/", async (_req, res) => {
 
     .human-info-input {
       width: 100%;
+      max-width: 100%;
       min-height: 170px;
       padding: 15px;
       border-radius: 15px;
@@ -2508,6 +2766,7 @@ app.get("/", async (_req, res) => {
       line-height: 1.55;
       resize: vertical;
       box-sizing: border-box;
+      overflow-wrap: anywhere;
       color: #eef5ff;
       background: rgba(255,255,255,0.055);
       outline: none;
@@ -2653,11 +2912,18 @@ app.get("/", async (_req, res) => {
 
       .kpi-grid,
       .task-meta,
+      .task-list-head,
+      .task-list-row,
+      .task-detail-grid,
       .settings-form,
       .ignored-row,
       .form-grid,
       .confirmation-assets {
         grid-template-columns: 1fr;
+      }
+
+      .task-list-head {
+        display: none;
       }
 
       .market-scan-grid,
@@ -2773,6 +3039,15 @@ app.get("/", async (_req, res) => {
           <div class="kpi-label">Anniversaires</div>
           <div class="kpi-value">${birthdayTasks}</div>
         </div>
+      </section>
+
+      <section class="settings-panel">
+        <div class="section-title">
+          <h2>Messages à traiter</h2>
+          <span>${totalTasks} tâche(s) à traiter</span>
+        </div>
+
+        ${renderTaskList(tasks, selectedTaskId)}
       </section>
       </section>
 
@@ -3198,114 +3473,6 @@ app.get("/", async (_req, res) => {
       </section>
       </section>
 
-      <section class="app-section is-active" data-view="email-management">
-      <div class="section-title">
-        <h2>Dernières tâches générées</h2>
-        <span>${totalTasks} tâche(s) à traiter</span>
-      </div>
-
-      ${
-        tasks.length === 0
-          ? `<div class="empty">Aucune tâche pour le moment. Echo est en veille active.</div>`
-          : tasks
-              .map((task) => {
-                const description = task.description || ""
-                const suggestedReply = extractSuggestedReply(description)
-                const internalInfoRequest = extractInternalInfoRequest(description)
-                const clientMessage = extractClientMessage(description)
-
-                const customerName = [
-                  task.customer?.firstName,
-                  task.customer?.lastName,
-                ].filter(Boolean).join(" ")
-
-                const displayName = customerName || "Nom non détecté"
-                const displayEmail = task.customer?.email || "Email inconnu"
-
-                return `
-                  <div class="task-card">
-                    <div class="task-top">
-                      <div>
-                        <div class="client-name">${escapeHtml(displayName)}</div>
-                        <div class="client-email">${escapeHtml(displayEmail)}</div>
-                      </div>
-
-                      <div class="badges">
-                        <span class="badge agent-badge">Echo</span>
-                        <span class="badge priority-${escapeHtml(task.priority)}">${escapeHtml(task.priority)}</span>
-                        <span class="badge status-badge">${escapeHtml(task.status)}</span>
-                      </div>
-                    </div>
-
-                    <div class="task-meta">
-                      <div class="meta-box">
-                        <strong>Type</strong>
-                        ${escapeHtml(task.taskType)}
-                      </div>
-
-                      <div class="meta-box">
-                        <strong>Échéance</strong>
-                        ${task.dueAt ? task.dueAt.toLocaleDateString("fr-CH") : "-"}
-                      </div>
-
-                      <div class="meta-box">
-                        <strong>Titre</strong>
-                        ${escapeHtml(task.title)}
-                      </div>
-
-                      <div class="meta-box">
-                        <strong>Créée le</strong>
-                        ${task.createdAt.toLocaleString("fr-CH")}
-                      </div>
-                    </div>
-
-                    <details class="details-box">
-                      <summary>Lire le message client complet</summary>
-                      <div class="message-box">${escapeHtml(clientMessage)}</div>
-                    </details>
-
-                    ${
-                      internalInfoRequest
-                        ? `<details class="details-box" open>
-                            <summary>Information interne requise</summary>
-                            <div class="message-box">${escapeHtml(internalInfoRequest)}</div>
-                            <form class="human-info-form" method="POST" action="/tasks/${task.id}/generate-reply">
-                              <textarea class="human-info-input" name="humanProvidedInfo" placeholder="Ajoutez ici les informations métier à utiliser pour générer la réponse client : description, tarif, durée, conditions, disponibilité, etc." required></textarea>
-                              <div class="human-info-actions">
-                                <button class="copy-button" type="submit">Générer la réponse IA</button>
-                              </div>
-                            </form>
-                          </details>`
-                        : ""
-                    }
-
-                    <details class="details-box">
-                      <summary>Voir la réponse IA complète</summary>
-                      ${
-                        suggestedReply
-                          ? `<textarea class="ai-reply" readonly>${escapeHtml(suggestedReply)}</textarea>`
-                          : `<span class="no-reply">Aucune réponse IA disponible.</span>`
-                      }
-                    </details>
-
-                    <div class="actions">
-                      ${
-                        suggestedReply
-                          ? `<button class="copy-button" onclick="copyReply(this)">Copier la réponse IA</button>
-                             <div class="reply-hidden" style="display:none;">${escapeHtml(suggestedReply)}</div>`
-                          : ""
-                      }
-
-                      <form method="POST" action="/tasks/${task.id}/done">
-                        <button class="done-button" type="submit">Marquer comme traité</button>
-                      </form>
-                    </div>
-                  </div>
-                `
-              })
-              .join("")
-      }
-      </section>
     </main>
   </div>
 
@@ -3333,6 +3500,32 @@ app.get("/", async (_req, res) => {
       const allowedViews = Array.from(document.querySelectorAll("[data-target-view]")).map((button) => button.dataset.targetView)
 
       setActiveView(allowedViews.includes(initialView) ? initialView : "email-management")
+    }
+
+    function setupTaskList() {
+      document.querySelectorAll(".task-list-item").forEach((item) => {
+        const row = item.querySelector(".task-list-row")
+
+        if (!row) return
+
+        const toggle = () => {
+          const isOpen = item.classList.toggle("is-open")
+          row.setAttribute("aria-expanded", isOpen ? "true" : "false")
+
+          if (isOpen) {
+            item.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" })
+          }
+        }
+
+        row.addEventListener("click", toggle)
+
+        row.addEventListener("keydown", (event) => {
+          if (event.key !== "Enter" && event.key !== " ") return
+
+          event.preventDefault()
+          toggle()
+        })
+      })
     }
 
     let birthdaySelectedFiles = []
@@ -3723,6 +3916,7 @@ app.get("/", async (_req, res) => {
     }
 
     setupNavigation()
+    setupTaskList()
     setupBirthdayDropzone()
     document.getElementById("analyzeBirthdayButton")?.addEventListener("click", analyzeBirthdayReservation)
     document.getElementById("cancelBirthdayButton")?.addEventListener("click", resetBirthdayReservation)

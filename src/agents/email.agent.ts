@@ -3,6 +3,7 @@ import type { IncomingEmail } from '../services/message.service'
 import { getAvailableSlots } from '../services/availability.service'
 import { extractDateRangeFromText } from '../services/date-extractor.service'
 import { analyzeEmail } from '../services/email-analysis.service'
+import { normalizeIncomingEmailBody } from '../services/email-body-normalizer.service'
 
 function getDateRangeForAvailability() {
   const start = new Date()
@@ -33,10 +34,22 @@ export async function runEmailAgent(email: IncomingEmail) {
   console.log(`Email reçu de : ${email.fromEmail}`)
   console.log(`Sujet : ${email.subject}`)
 
+  const normalizedBody = normalizeIncomingEmailBody(email.body)
+  const normalizedEmail = {
+    ...email,
+    body: normalizedBody,
+  }
+
+  if (normalizedBody.length < email.body.length) {
+    console.log(
+      `✂️ Message nettoyé avant analyse IA : ${email.body.length} → ${normalizedBody.length} caractères`
+    )
+  }
+
   let emailAnalysis = await analyzeEmail({
-    fromEmail: email.fromEmail,
-    subject: email.subject,
-    body: email.body,
+    fromEmail: normalizedEmail.fromEmail,
+    subject: normalizedEmail.subject,
+    body: normalizedEmail.body,
   })
 
   if (emailAnalysis.shouldCheckCalendar && emailAnalysis.replyMode === 'ANSWER_AND_CLOSE') {
@@ -61,7 +74,7 @@ export async function runEmailAgent(email: IncomingEmail) {
     console.log('\n📅 Vérification calendrier autorisée pour cet anniversaire sur place')
 
     try {
-      const extracted = await extractDateRangeFromText(email.body)
+      const extracted = await extractDateRangeFromText(normalizedEmail.body)
 
       let start: string
       let end: string
@@ -104,7 +117,7 @@ export async function runEmailAgent(email: IncomingEmail) {
   }
 
   const enrichedEmail = {
-    ...email,
+    ...normalizedEmail,
     aiContext: {
       needsAvailability: emailAnalysis.shouldCheckCalendar,
       availableSlots,

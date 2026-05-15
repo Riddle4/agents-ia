@@ -4,6 +4,7 @@ import type { EmailAnalysis, EmailRequestType, ReplyMode } from "./email-analysi
 import { laurentReplyStyle } from "../config/laurent-style"
 import { classifyRequest, type RequestType } from "./request-classifier.service"
 import { getBusinessTemplate } from "./reply-templates.service"
+import { normalizeIncomingEmailBody } from "./email-body-normalizer.service"
 
 let openai: OpenAI | null = null
 
@@ -291,10 +292,11 @@ export async function generateAIReply(input: GenerateAIReplyInput) {
     throw new Error("OPENAI_API_KEY manquante dans .env")
   }
 
+  const normalizedBody = normalizeIncomingEmailBody(input.body)
   const analysis = input.aiContext?.emailAnalysis
   const requestType =
     mapAnalysisRequestType(analysis?.requestType) ??
-    classifyRequest(input.subject, input.body)
+    classifyRequest(input.subject, normalizedBody)
 
   const businessTemplate = getBusinessTemplate(requestType, {
     firstName: null,
@@ -423,7 +425,7 @@ De : ${input.fromEmail}
 Sujet : ${input.subject}
 
 Message :
-${input.body}
+${normalizedBody}
 
 Rédige uniquement la réponse email proposée.
     `.trim(),

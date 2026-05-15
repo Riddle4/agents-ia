@@ -1,4 +1,5 @@
 import OpenAI from "openai"
+import { normalizeIncomingEmailBody } from "./email-body-normalizer.service"
 
 let openai: OpenAI | null = null
 
@@ -340,7 +341,11 @@ function heuristicAnalysis(input: AnalyzeEmailInput): EmailAnalysis {
 }
 
 export async function analyzeEmail(input: AnalyzeEmailInput): Promise<EmailAnalysis> {
-  const fallback = heuristicAnalysis(input)
+  const normalizedInput = {
+    ...input,
+    body: normalizeIncomingEmailBody(input.body),
+  }
+  const fallback = heuristicAnalysis(normalizedInput)
 
   const client = getOpenAIClient()
 
@@ -389,7 +394,7 @@ De : ${input.fromEmail}
 Sujet : ${input.subject}
 
 Message :
-${input.body}
+${normalizedInput.body}
     `.trim(),
   })
 

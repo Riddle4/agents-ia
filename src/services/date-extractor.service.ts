@@ -1,4 +1,5 @@
 import OpenAI from "openai"
+import { normalizeIncomingEmailBody } from "./email-body-normalizer.service"
 
 let openai: OpenAI | null = null
 
@@ -23,6 +24,8 @@ export async function extractDateRangeFromText(text: string) {
     return null
   }
 
+  const normalizedText = normalizeIncomingEmailBody(text)
+
   const response = await client.responses.create({
     model: process.env.ECHO_DATE_MODEL || "gpt-5",
     input: `
@@ -38,7 +41,7 @@ Règles :
 - Si aucune date claire : retourne null
 
 Message :
-${text}
+${normalizedText}
 
 Répond uniquement avec un JSON.
     `.trim(),
