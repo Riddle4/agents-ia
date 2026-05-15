@@ -90,10 +90,10 @@ export async function runEmailAgent(email: IncomingEmail) {
         replyMode: 'ESCALATE_TO_HUMAN',
         missingHumanInfo: [
           ...emailAnalysis.missingHumanInfo,
-          'Vérification Google Calendar impossible',
+          `Vérification Google Calendar impossible : ${availabilityError}`,
         ],
         humanQuestion:
-          'Le calendrier Google est inaccessible. Peux-tu vérifier les disponibilités manuellement avant validation ?',
+          `Le calendrier Google est inaccessible (${availabilityError}). Peux-tu vérifier les disponibilités manuellement avant validation ?`,
         reasoningSummary: `${emailAnalysis.reasoningSummary} La vérification calendrier a échoué : ${availabilityError}.`,
       }
 

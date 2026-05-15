@@ -37,13 +37,13 @@ Merci beaucoup pour votre message et votre intérêt pour nos anniversaires magi
 
 Nous serions ravis de vous aider à organiser un moment magique pour votre enfant.
 
-Afin de vous répondre précisément, pourriez-vous me confirmer :
+Pour pouvoir vous répondre précisément, pourriez-vous nous confirmer :
 - la date souhaitée
 - l’âge de l’enfant
 - le lieu de l’anniversaire
 - le nombre approximatif d’enfants
 
-Je pourrai ensuite vous indiquer les possibilités et vous transmettre les informations adaptées.
+Nous pourrons ensuite vous indiquer les possibilités et vous transmettre les informations adaptées.
 
 Salutations magiques 💫
 
@@ -59,13 +59,13 @@ Merci beaucoup pour votre message.
 
 Avec plaisir, nous pouvons vous transmettre une proposition adaptée.
 
-Afin de préparer une réponse précise, pourriez-vous me préciser :
+Pour préparer une réponse précise, pourriez-vous nous préciser :
 - le type d’événement
 - la date souhaitée
 - le lieu
 - le nombre approximatif de participants
 
-Je pourrai ensuite revenir vers vous avec les informations et tarifs correspondants.
+Nous pourrons ensuite revenir vers vous avec les informations et tarifs correspondants.
 
 Salutations magiques 💫
 
@@ -79,15 +79,15 @@ Bonjour,
 
 Merci beaucoup pour votre message et votre intérêt pour nos cours de magie.
 
-Avec plaisir, je peux vous renseigner.
+Avec plaisir, nous pouvons vous renseigner.
 
-Pour vous orienter au mieux, pourriez-vous me préciser :
+Pour vous orienter au mieux, pourriez-vous nous préciser :
 - l’âge de l’enfant
 - le niveau actuel en magie, s’il en a déjà fait
 - le lieu ou le cours qui vous intéresse
 - vos disponibilités éventuelles
 
-Je reviendrai ensuite vers vous avec les possibilités adaptées.
+Nous reviendrons ensuite vers vous avec les possibilités adaptées.
 
 Salutations magiques 💫
 
@@ -101,11 +101,11 @@ Bonjour,
 
 Merci pour votre message.
 
-Je suis désolé d’apprendre qu’il y a eu un souci. Je vais regarder cela attentivement afin de vous répondre au mieux.
+Nous sommes désolés d’apprendre qu’il y a eu un souci. Nous allons regarder cela attentivement afin de vous répondre au mieux.
 
-Pouvez-vous, si possible, me transmettre quelques précisions complémentaires afin que je puisse traiter votre demande rapidement ?
+Pouvez-vous, si possible, nous transmettre quelques précisions complémentaires afin que nous puissions traiter votre demande rapidement ?
 
-Je reviens vers vous dès que possible.
+Nous revenons vers vous dès que possible.
 
 Salutations magiques 💫
 
@@ -119,15 +119,15 @@ Bonjour,
 
 Merci beaucoup pour votre message.
 
-Avec plaisir, je vais vérifier les disponibilités pour vous répondre précisément.
+Avec plaisir, nous allons vérifier les disponibilités pour vous répondre précisément.
 
-Pourriez-vous me confirmer :
+Pourriez-vous nous confirmer :
 - la date souhaitée
 - l’horaire idéal
 - le type de prestation recherchée
 - le nombre de participants
 
-Je pourrai ensuite vous indiquer les options possibles.
+Nous pourrons ensuite vous indiquer les options possibles.
 
 Salutations magiques 💫
 
@@ -141,7 +141,7 @@ Bonjour,
 
 Merci beaucoup pour votre message.
 
-Je l’ai bien reçu et je vais revenir vers vous dès que possible avec les informations nécessaires.
+Nous l’avons bien reçu et nous reviendrons vers vous dès que possible avec les informations nécessaires.
 
 Salutations magiques 💫
 

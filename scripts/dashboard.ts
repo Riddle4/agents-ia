@@ -31,6 +31,7 @@ import {
   parseExcel,
   updateOpportunityStatus,
 } from "../src/services/phoenix-crm.service"
+import { getBusySlots } from "../src/services/calendar.service"
 
 const app = express()
 const port = process.env.PORT || 3000
@@ -178,6 +179,10 @@ function normalizeDashboardEmail(value: unknown) {
 
 function normalizeDashboardPhone(value: unknown) {
   return String(value || "").trim().replace(/[^0-9+]/g, "") || null
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Erreur inconnue"
 }
 
 function redirectBack(res: express.Response, fallback: string, req?: express.Request) {
@@ -994,6 +999,38 @@ app.post("/birthday-reservations/add-event", async (req, res) => {
   })
 
   res.redirect("/#birthday-registration")
+})
+
+app.post("/diagnostics/calendar", async (_req, res) => {
+  const startedAt = new Date()
+  const envStatus = {
+    GOOGLE_CLIENT_ID: Boolean(process.env.GOOGLE_CLIENT_ID),
+    GOOGLE_CLIENT_SECRET: Boolean(process.env.GOOGLE_CLIENT_SECRET),
+    GOOGLE_CALENDAR_ID: Boolean(process.env.GOOGLE_CALENDAR_ID),
+    GOOGLE_REFRESH_TOKEN: Boolean(process.env.GOOGLE_REFRESH_TOKEN),
+  }
+
+  try {
+    const busySlots = await getBusySlots(
+      "2026-05-01T00:00:00+02:00",
+      "2026-05-31T23:59:59+02:00"
+    )
+
+    res.json({
+      success: true,
+      checkedAt: startedAt.toISOString(),
+      envStatus,
+      busySlotsCount: busySlots.length,
+      message: "Connexion Google Calendar OK",
+    })
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      checkedAt: startedAt.toISOString(),
+      envStatus,
+      error: getErrorMessage(error),
+    })
+  }
 })
 
 app.post("/market-analysis/run", async (_req, res) => {
@@ -2666,6 +2703,7 @@ app.get("/", async (_req, res) => {
         <button class="side-link" type="button" data-target-view="market-watch">Veille marché</button>
         <a class="side-link" href="/phoenix">Phoenix CRM</a>
         <button class="side-link" type="button" data-target-view="ignored-senders">Expéditeurs ignorés</button>
+        <button class="side-link" type="button" data-target-view="diagnostics">Diagnostics</button>
       </nav>
 
       <div class="sidebar-footer">
@@ -3136,6 +3174,27 @@ app.get("/", async (_req, res) => {
                   .join("")
           }
         </div>
+      </section>
+      </section>
+
+      <section class="app-section" data-view="diagnostics">
+      <div class="section-title">
+        <h2>Diagnostics</h2>
+        <span>Contrôles production</span>
+      </div>
+
+      <section class="settings-panel birthday-workflow">
+        <div>
+          <h3 style="margin:0 0 8px;">Google Calendar</h3>
+          <div class="subtitle">Teste la connexion Calendar depuis ce serveur, sans afficher les valeurs secrètes.</div>
+        </div>
+
+        <div class="actions">
+          <button class="copy-button" type="button" id="calendarDiagnosticButton">Tester Google Calendar</button>
+          <span id="calendarDiagnosticLoading" class="loading-text">Test en cours...</span>
+        </div>
+
+        <div id="calendarDiagnosticStatus" class="market-status"></div>
       </section>
       </section>
 
@@ -3614,6 +3673,55 @@ app.get("/", async (_req, res) => {
       }
     }
 
+    async function runCalendarDiagnostic() {
+      const loading = document.getElementById("calendarDiagnosticLoading")
+      const button = document.getElementById("calendarDiagnosticButton")
+      const status = document.getElementById("calendarDiagnosticStatus")
+
+      if (!button || !status) return
+
+      status.className = "market-status"
+      status.innerText = ""
+      loading?.classList.add("is-visible")
+      button.disabled = true
+
+      try {
+        const response = await fetch("/diagnostics/calendar", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        })
+
+        const payload = await response.json()
+        const env = payload.envStatus || {}
+        const lines = [
+          payload.success ? "Google Calendar OK" : "Google Calendar inaccessible",
+          "Test : " + (payload.checkedAt || "-"),
+          "GOOGLE_CLIENT_ID : " + (env.GOOGLE_CLIENT_ID ? "présent" : "manquant"),
+          "GOOGLE_CLIENT_SECRET : " + (env.GOOGLE_CLIENT_SECRET ? "présent" : "manquant"),
+          "GOOGLE_CALENDAR_ID : " + (env.GOOGLE_CALENDAR_ID ? "présent" : "manquant"),
+          "GOOGLE_REFRESH_TOKEN : " + (env.GOOGLE_REFRESH_TOKEN ? "présent" : "manquant"),
+        ]
+
+        if (payload.success) {
+          lines.push("Créneaux occupés détectés en mai 2026 : " + payload.busySlotsCount)
+          lines.push(payload.message || "Connexion OK")
+        } else {
+          lines.push("Erreur : " + (payload.error || "Erreur inconnue"))
+        }
+
+        status.innerText = lines.join("\\n")
+        status.classList.add("is-visible", payload.success ? "is-success" : "is-error")
+      } catch (error) {
+        status.innerText = error instanceof Error ? error.message : "Diagnostic impossible"
+        status.classList.add("is-visible", "is-error")
+      } finally {
+        loading?.classList.remove("is-visible")
+        button.disabled = false
+      }
+    }
+
     setupNavigation()
     setupBirthdayDropzone()
     document.getElementById("analyzeBirthdayButton")?.addEventListener("click", analyzeBirthdayReservation)
@@ -3622,6 +3730,7 @@ app.get("/", async (_req, res) => {
     document.querySelectorAll(".market-scan-button").forEach((button) => {
       button.addEventListener("click", () => runMarketAnalysis(button.dataset.marketDomain, button))
     })
+    document.getElementById("calendarDiagnosticButton")?.addEventListener("click", runCalendarDiagnostic)
     document.querySelectorAll(".market-source-link").forEach((link) => {
       link.addEventListener("click", (event) => {
         const url = link.dataset.sourceUrl || link.href

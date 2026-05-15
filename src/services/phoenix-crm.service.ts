@@ -569,7 +569,7 @@ function toTitleCase(value: string) {
 
 function buildFallbackMessage(targetName: string, serviceName: string, reason: string, channel: string) {
   const greeting = channel === "whatsapp" ? "Bonjour" : `Bonjour ${targetName},`
-  return `${greeting}\n\nJe me permets de vous recontacter car ${reason.toLowerCase()}\n\nNous pourrions vous proposer ${serviceName}, avec une formule adaptée à votre situation.\n\nSouhaitez-vous que je vous envoie quelques possibilités ?\n\nSalutations magiques,\nL’Equipe du Centre de Magie de la Côte`
+  return `${greeting}\n\nNous nous permettons de vous recontacter car ${reason.toLowerCase()}\n\nNous pourrions vous proposer ${serviceName}, avec une formule adaptée à votre situation.\n\nSouhaitez-vous que nous vous envoyions quelques possibilités ?\n\nSalutations magiques,\nL’Equipe du Centre de Magie de la Côte`
 }
 
 async function findOrCreateSessionFromBooking(booking: any, activityId: string) {
