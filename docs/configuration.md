@@ -200,5 +200,5 @@ npm run test:email
 Tester les disponibilites Google Calendar :
 
 ```bash
-tsx scripts/test-availability.ts
+npm run test:calendar
 ```

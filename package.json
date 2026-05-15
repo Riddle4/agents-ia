@@ -10,6 +10,7 @@
     "view:tasks": "tsx scripts/view-tasks.ts",
     "view:events": "tsx scripts/view-events.ts",
     "test:email": "tsx scripts/test-orchestrator.ts",
+    "test:calendar": "tsx scripts/test-calendar.ts",
     "test:gmail": "tsx scripts/test-gmail-ingestion.ts",
     "test:form": "tsx scripts/test-form-agent.ts"
   },

@@ -96,7 +96,7 @@ npm run view:events
 Tester les disponibilites :
 
 ```bash
-tsx scripts/test-availability.ts
+npm run test:calendar
 ```
 
 ## Base De Donnees

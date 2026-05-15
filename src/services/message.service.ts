@@ -101,11 +101,14 @@ export async function createInboundMessage(
 
     if (existingMessage) {
       console.log('⚠️ Message déjà traité, doublon technique ignoré')
-      return existingMessage
+      return {
+        message: existingMessage,
+        action: 'REUSED' as const,
+      }
     }
   }
 
-  return tx.message.create({
+  const message = await tx.message.create({
     data: {
       customerId,
       source,
@@ -121,4 +124,9 @@ export async function createInboundMessage(
       createdAt: email.receivedAt ?? new Date(),
     },
   })
+
+  return {
+    message,
+    action: 'CREATED' as const,
+  }
 }
