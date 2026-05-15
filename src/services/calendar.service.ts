@@ -15,7 +15,7 @@ function getGoogleErrorDetails(error: unknown) {
 
   const parts = [
     status ? `status ${status}` : null,
-    apiError,
+    typeof apiError === "string" ? apiError : apiError ? JSON.stringify(apiError) : null,
     apiDescription,
     apiMessage,
     error.message,

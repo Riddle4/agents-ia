@@ -30,8 +30,30 @@ const SLOT_DEFINITIONS_BY_DAY: Record<number, { start: string; end: string }[]> 
   ],
 }
 
+function normalizeRangeBoundary(value: string, boundary: "start" | "end") {
+  const date = DateTime.fromISO(value, { zone: "Europe/Zurich" })
+
+  if (!date.isValid) {
+    throw new Error(`Date calendrier invalide : ${value}`)
+  }
+
+  const normalized =
+    boundary === "start"
+      ? date.setZone("Europe/Zurich").startOf("day")
+      : date.setZone("Europe/Zurich").endOf("day")
+
+  return normalized.toISO()
+}
+
 export async function getAvailableSlots(start: string, end: string) {
-  const busy = await getBusySlots(start, end)
+  const normalizedStart = normalizeRangeBoundary(start, "start")
+  const normalizedEnd = normalizeRangeBoundary(end, "end")
+
+  if (!normalizedStart || !normalizedEnd) {
+    throw new Error("Période calendrier invalide")
+  }
+
+  const busy = await getBusySlots(normalizedStart, normalizedEnd)
 
   const busySlots: Slot[] = (busy as BusySlot[]).map((b) => ({
     start: DateTime.fromISO(b.start).setZone("Europe/Zurich"),
@@ -45,8 +67,8 @@ export async function getAvailableSlots(start: string, end: string) {
     end: string
   }[] = []
 
-  let current = DateTime.fromISO(start).setZone("Europe/Zurich").startOf("day")
-  const endDate = DateTime.fromISO(end).setZone("Europe/Zurich").endOf("day")
+  let current = DateTime.fromISO(normalizedStart).setZone("Europe/Zurich").startOf("day")
+  const endDate = DateTime.fromISO(normalizedEnd).setZone("Europe/Zurich").endOf("day")
 
   while (current <= endDate) {
     const daySlots = SLOT_DEFINITIONS_BY_DAY[current.weekday] ?? []
