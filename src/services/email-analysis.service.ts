@@ -1,5 +1,6 @@
 import OpenAI from "openai"
 import { normalizeIncomingEmailBody } from "./email-body-normalizer.service"
+import { buildKnowledgeContext, findRelevantKnowledge } from "./knowledge-base.service"
 
 let openai: OpenAI | null = null
 
@@ -346,6 +347,13 @@ export async function analyzeEmail(input: AnalyzeEmailInput): Promise<EmailAnaly
     body: normalizeIncomingEmailBody(input.body),
   }
   const fallback = heuristicAnalysis(normalizedInput)
+  const relevantKnowledge = await findRelevantKnowledge({
+    subject: normalizedInput.subject,
+    body: normalizedInput.body,
+    requestType: fallback.requestType,
+    limit: 5,
+  })
+  const knowledgeContext = buildKnowledgeContext(relevantKnowledge)
 
   const client = getOpenAIClient()
 
@@ -385,9 +393,14 @@ Règles d'escalade humaine :
 - Ne mets pas dans missingHumanInfo une information que le client peut donner lui-même.
 - Utilise missingHumanInfo pour les informations internes : tarif à confirmer, décision commerciale, cas sensible, règle métier absente, disponibilité ambiguë.
 - Si missingHumanInfo n'est pas vide, humanQuestion doit être une question claire destinée à la personne qui valide l'email.
-- Pars du principe que l'équipe possède les réponses aux questions métier. Si l'information n'est pas dans le contexte IA, utilise ESCALATE_TO_HUMAN au lieu de préparer une réponse vague au client.
-- Pour une sortie scolaire, un atelier scolaire, une classe ou un groupe d'élèves qui demande description, âge recommandé, prix, durée ou faisabilité, utilise ESCALATE_TO_HUMAN sauf si toutes ces informations sont explicitement disponibles dans le contexte.
+- Utilise la base métier ci-dessous comme source fiable.
+- Si la base métier contient les informations nécessaires pour répondre, n'utilise pas ESCALATE_TO_HUMAN.
+- Si l'information n'est ni dans l'email ni dans la base métier, utilise ESCALATE_TO_HUMAN au lieu de préparer une réponse vague au client.
+- Pour une sortie scolaire, un atelier scolaire, une classe ou un groupe d'élèves qui demande description, âge recommandé, prix, durée ou faisabilité, utilise ESCALATE_TO_HUMAN sauf si toutes ces informations sont explicitement disponibles dans la base métier.
 - N'utilise pas ANSWER_AND_CLOSE avec une phrase du type "nous allons vérifier" quand il manque une information interne.
+
+Base métier disponible :
+${knowledgeContext}
 
 Email :
 De : ${input.fromEmail}

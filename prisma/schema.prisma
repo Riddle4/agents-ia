@@ -72,6 +72,23 @@ model IgnoredSender {
   createdAt DateTime @default(now())
 }
 
+model KnowledgeBaseEntry {
+  id           String   @id @default(uuid())
+  category     String
+  question     String
+  answer       String
+  keywords     String[] @default([])
+  requestType  String?
+  sourceTaskId String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([category])
+  @@index([requestType])
+  @@index([active])
+}
+
 model MarketCompetitor {
   id        String   @id @default(uuid())
   name      String

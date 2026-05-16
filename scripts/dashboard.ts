@@ -7,6 +7,11 @@ import {
   listIgnoredSenders,
   removeIgnoredSender,
 } from "../src/services/ignored-sender.service"
+import {
+  createKnowledgeBaseEntry,
+  listKnowledgeBaseEntries,
+  removeKnowledgeBaseEntry,
+} from "../src/services/knowledge-base.service"
 import { generateReplyForTaskWithHumanInfo } from "../src/services/task.service"
 import {
   addBirthdayReservationToCalendar,
@@ -227,6 +232,14 @@ function renderTaskDetailContent(task: any) {
               <div class="message-box">${escapeHtml(data.internalInfoRequest)}</div>
               <form class="human-info-form" method="POST" action="/tasks/${task.id}/generate-reply">
                 <textarea class="human-info-input" name="humanProvidedInfo" placeholder="Ajoutez ici les informations métier à utiliser pour générer la réponse client : description, tarif, durée, conditions, disponibilité, etc." required></textarea>
+                <label class="knowledge-save-option">
+                  <input type="checkbox" name="saveToKnowledgeBase" value="1" />
+                  Enregistrer ces informations métier dans la base de connaissance
+                </label>
+                <div class="knowledge-save-help">
+                  À cocher seulement si l'information est générale et pourra resservir. Écrivez une réponse métier complète : prix, âge, durée, conditions, marche à suivre. Ne cochez pas pour une disponibilité, une exception ou une décision propre à ce client.
+                </div>
+                <input class="input knowledge-category-input" type="text" name="knowledgeCategory" placeholder="Catégorie métier, ex. Sorties scolaires, Anniversaires, Stages..." />
                 <div class="human-info-actions">
                   <button class="copy-button" type="submit">Générer la réponse IA</button>
                 </div>
@@ -1084,10 +1097,32 @@ app.post("/tasks/:id/done", async (req, res) => {
 
 app.post("/tasks/:id/generate-reply", async (req, res) => {
   const humanProvidedInfo = String(req.body.humanProvidedInfo || "")
+  const saveToKnowledgeBase = req.body.saveToKnowledgeBase === "1"
+  const knowledgeCategory = String(req.body.knowledgeCategory || "")
 
-  await generateReplyForTaskWithHumanInfo(req.params.id, humanProvidedInfo)
+  await generateReplyForTaskWithHumanInfo(req.params.id, humanProvidedInfo, {
+    saveToKnowledgeBase,
+    knowledgeCategory,
+  })
 
   res.redirect(`/?task=${encodeURIComponent(req.params.id)}#email-management`)
+})
+
+app.post("/knowledge-base", async (req, res) => {
+  await createKnowledgeBaseEntry({
+    category: String(req.body.category || ""),
+    question: String(req.body.question || ""),
+    answer: String(req.body.answer || ""),
+    requestType: String(req.body.requestType || "") || null,
+  })
+
+  res.redirect("/#knowledge-base")
+})
+
+app.post("/knowledge-base/:id/delete", async (req, res) => {
+  await removeKnowledgeBaseEntry(req.params.id)
+
+  res.redirect("/#knowledge-base")
 })
 
 app.post("/ignored-senders", async (req, res) => {
@@ -1840,6 +1875,7 @@ app.get("/", async (req, res) => {
     COURS: await loadMarketDomainResults("COURS"),
   }
   const selectedTaskId = String(req.query.task || "")
+  const knowledgeEntries = await listKnowledgeBaseEntries()
 
   const totalTasks = tasks.length
   const highTasks = tasks.filter((task) => task.priority === "HIGH").length
@@ -2443,6 +2479,11 @@ app.get("/", async (req, res) => {
       margin-top: 14px;
     }
 
+    .settings-form textarea.summary-editor {
+      grid-column: 1 / -1;
+      min-height: 140px;
+    }
+
     .input {
       width: 100%;
       border-radius: 13px;
@@ -2773,6 +2814,33 @@ app.get("/", async (req, res) => {
       font-family: inherit;
     }
 
+    .knowledge-save-option {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin: 12px 0;
+      color: #dce8fb;
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .knowledge-save-option input {
+      width: 17px;
+      height: 17px;
+      accent-color: #19c98b;
+    }
+
+    .knowledge-save-help {
+      margin: -4px 0 12px 26px;
+      color: #91a2bd;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .knowledge-category-input {
+      margin-bottom: 12px;
+    }
+
     .human-info-actions {
       margin-top: 12px;
       display: flex;
@@ -2968,6 +3036,7 @@ app.get("/", async (req, res) => {
         <button class="side-link" type="button" data-target-view="birthday-registration">Enregistrer un anniversaire</button>
         <button class="side-link" type="button" data-target-view="market-watch">Veille marché</button>
         <a class="side-link" href="/phoenix">Phoenix CRM</a>
+        <button class="side-link" type="button" data-target-view="knowledge-base">Base métier</button>
         <button class="side-link" type="button" data-target-view="ignored-senders">Expéditeurs ignorés</button>
         <button class="side-link" type="button" data-target-view="diagnostics">Diagnostics</button>
       </nav>
@@ -3414,6 +3483,58 @@ app.get("/", async (req, res) => {
           })
           .join("")
       }
+
+      <section class="app-section" data-view="knowledge-base">
+      <div class="section-title">
+        <h2>Base métier</h2>
+        <span>${knowledgeEntries.length} connaissance(s)</span>
+      </div>
+
+      <section class="settings-panel">
+        <div class="subtitle">Les connaissances métier sont utilisées par Echo avant de demander une information complémentaire à l'humain.</div>
+
+        <form class="settings-form" method="POST" action="/knowledge-base">
+          <input class="input" type="text" name="category" placeholder="Catégorie, ex. Sorties scolaires" required />
+          <input class="input" type="text" name="requestType" placeholder="Type optionnel, ex. ECOLE_PRIVEE" />
+          <button type="submit">Ajouter</button>
+
+          <textarea class="summary-editor" name="question" placeholder="Question couverte par cette connaissance" required></textarea>
+          <textarea class="summary-editor" name="answer" placeholder="Réponse métier fiable à réutiliser" required></textarea>
+        </form>
+      </section>
+
+      <section class="settings-panel">
+        <div class="ignored-list">
+          ${
+            knowledgeEntries.length === 0
+              ? `<div class="empty">Aucune connaissance métier pour le moment. Les infos enregistrées depuis une tâche apparaîtront ici.</div>`
+              : knowledgeEntries
+                  .map((entry) => {
+                    return `
+                      <details class="details-box">
+                        <summary>${escapeHtml(entry.category)} · ${escapeHtml(entry.requestType || "Général")}</summary>
+                        <div class="message-box">
+                          <strong>Question</strong>
+                          ${escapeHtml(entry.question)}
+
+                          <strong>Réponse métier</strong>
+                          ${escapeHtml(entry.answer)}
+
+                          <strong>Mots-clés</strong>
+                          ${escapeHtml((entry.keywords || []).join(", ") || "-")}
+
+                          <form method="POST" action="/knowledge-base/${entry.id}/delete">
+                            <button class="danger-button" type="submit">Supprimer de la base</button>
+                          </form>
+                        </div>
+                      </details>
+                    `
+                  })
+                  .join("")
+          }
+        </div>
+      </section>
+      </section>
 
       <section class="app-section" data-view="ignored-senders">
       <div class="section-title">

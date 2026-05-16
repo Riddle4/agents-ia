@@ -4,6 +4,7 @@ import type { EmailAnalysis } from './email-analysis.service'
 import { analyzeTaskNeed } from './task-intelligence.service'
 import { generateAIReply } from './ai-reply-generator.service'
 import type { SmartTaskDecision } from './task-intelligence.service'
+import { createKnowledgeBaseEntry } from './knowledge-base.service'
 
 function formatEmailAnalysis(email: IncomingEmail) {
   const analysis = email.aiContext?.emailAnalysis
@@ -190,6 +191,28 @@ function buildResolvedAnalysis(): EmailAnalysis {
   }
 }
 
+function parseRequestTypeFromDescription(description: string) {
+  const match = description.match(/Type de demande\s*:\s*([A-Z_]+)/)
+
+  return match?.[1] || null
+}
+
+function buildKnowledgeQuestionFromTask(description: string) {
+  const internalRequest = extractSection(description, '--- INFORMATION INTERNE REQUISE ---', [
+    '--- INFORMATION FOURNIE PAR L’ÉQUIPE ---',
+    '--- MESSAGE CLIENT ---',
+    '--- RÉPONSE SUGGÉRÉE ---',
+    '--- RÉPONSE À GÉNÉRER APRÈS COMPLÉTION INTERNE ---',
+  ])
+
+  const operatorQuestion = internalRequest
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.endsWith('?'))
+
+  return operatorQuestion || internalRequest || 'Information métier utile pour répondre à ce type de demande.'
+}
+
 export async function createFollowUpTaskIfNeeded(
   customerId: string,
   email: IncomingEmail,
@@ -294,7 +317,11 @@ ${suggestedReply}` : '--- RÉPONSE À GÉNÉRER APRÈS COMPLÉTION INTERNE ---'}
 
 export async function generateReplyForTaskWithHumanInfo(
   taskId: string,
-  humanProvidedInfo: string
+  humanProvidedInfo: string,
+  options?: {
+    saveToKnowledgeBase?: boolean
+    knowledgeCategory?: string | null
+  }
 ) {
   const cleanedHumanInfo = humanProvidedInfo.trim()
 
@@ -326,6 +353,16 @@ export async function generateReplyForTaskWithHumanInfo(
       emailAnalysis: buildResolvedAnalysis(),
     },
   })
+
+  if (options?.saveToKnowledgeBase) {
+    await createKnowledgeBaseEntry({
+      category: options.knowledgeCategory?.trim() || 'Général',
+      question: buildKnowledgeQuestionFromTask(task.description),
+      answer: cleanedHumanInfo,
+      requestType: parseRequestTypeFromDescription(task.description),
+      sourceTaskId: task.id,
+    })
+  }
 
   let description = replaceOrAppendSection(
     task.description,

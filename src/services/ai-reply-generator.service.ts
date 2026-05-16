@@ -5,6 +5,7 @@ import { laurentReplyStyle } from "../config/laurent-style"
 import { classifyRequest, type RequestType } from "./request-classifier.service"
 import { getBusinessTemplate } from "./reply-templates.service"
 import { normalizeIncomingEmailBody } from "./email-body-normalizer.service"
+import { buildKnowledgeContext, findRelevantKnowledge } from "./knowledge-base.service"
 
 let openai: OpenAI | null = null
 
@@ -297,6 +298,13 @@ export async function generateAIReply(input: GenerateAIReplyInput) {
   const requestType =
     mapAnalysisRequestType(analysis?.requestType) ??
     classifyRequest(input.subject, normalizedBody)
+  const relevantKnowledge = await findRelevantKnowledge({
+    subject: input.subject,
+    body: normalizedBody,
+    requestType: analysis?.requestType ?? null,
+    limit: 5,
+  })
+  const knowledgeContext = buildKnowledgeContext(relevantKnowledge)
 
   const businessTemplate = getBusinessTemplate(requestType, {
     firstName: null,
@@ -391,6 +399,14 @@ Anniversaires :
   - dès 8 ans : proposer magie, escape game ou formule combinée.
 
 ${businessContext}
+
+Base métier fiable :
+${knowledgeContext}
+
+Règles d'utilisation de la base métier :
+- Tu peux utiliser les informations de la base métier pour répondre directement au client.
+- Si la base métier couvre la question client, ne dis pas que nous allons vérifier.
+- Si une information manque malgré la base métier, demande uniquement l'information indispensable ou laisse la tâche en attente humaine selon le mode de réponse.
 
 Type de demande identifié :
 ${requestType}
