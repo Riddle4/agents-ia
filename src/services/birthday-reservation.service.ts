@@ -104,10 +104,14 @@ function parseJSON(text: string) {
 
 function fileToContent(file: UploadedReservationFile) {
   if (file.mimeType === "application/pdf") {
+    const fileData = file.dataUrl.startsWith("data:")
+      ? file.dataUrl
+      : `data:application/pdf;base64,${file.dataUrl}`
+
     return {
       type: "input_file",
       filename: file.name,
-      file_data: file.dataUrl.replace(/^data:application\/pdf;base64,/, ""),
+      file_data: fileData,
     }
   }
 
