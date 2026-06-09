@@ -73,6 +73,44 @@ export async function getBusySlots(start: string, end: string) {
   }
 }
 
+export async function listUpcomingCalendarEvents(maxResults = 12) {
+  const auth = getGoogleAuthClient()
+
+  if (!process.env.GOOGLE_REFRESH_TOKEN) {
+    throw new Error("GOOGLE_REFRESH_TOKEN manquant")
+  }
+
+  if (!process.env.GOOGLE_CALENDAR_ID) {
+    throw new Error("GOOGLE_CALENDAR_ID manquant")
+  }
+
+  auth.setCredentials({
+    refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
+  })
+
+  const calendar = google.calendar({ version: "v3", auth })
+
+  try {
+    const response = await calendar.events.list({
+      calendarId: process.env.GOOGLE_CALENDAR_ID,
+      timeMin: new Date().toISOString(),
+      maxResults,
+      singleEvents: true,
+      orderBy: "startTime",
+    })
+
+    return (response.data.items ?? []).map((event) => ({
+      id: event.id || "",
+      summary: event.summary || "Événement sans titre",
+      start: event.start?.dateTime || event.start?.date || "",
+      end: event.end?.dateTime || event.end?.date || "",
+      location: event.location || "",
+    }))
+  } catch (error) {
+    throw withGoogleCalendarContext(error)
+  }
+}
+
 type CreateCalendarEventInput = {
   summary: string
   description: string

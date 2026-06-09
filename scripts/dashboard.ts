@@ -37,6 +37,7 @@ import {
   updateOpportunityStatus,
 } from "../src/services/phoenix-crm.service"
 import { getBusySlots } from "../src/services/calendar.service"
+import { answerCosmoCopilot } from "../src/services/cosmo-copilot.service"
 
 const app = express()
 const port = process.env.PORT || 3000
@@ -1106,6 +1107,24 @@ app.post("/tasks/:id/generate-reply", async (req, res) => {
   })
 
   res.redirect(`/?task=${encodeURIComponent(req.params.id)}#email-management`)
+})
+
+app.post("/copilot/chat", async (req, res) => {
+  try {
+    const message = String(req.body.message || "")
+    const history = Array.isArray(req.body.history) ? req.body.history : []
+    const answer = await answerCosmoCopilot({ message, history })
+
+    res.json({
+      success: true,
+      answer,
+    })
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Cosmo Copilot indisponible",
+    })
+  }
 })
 
 app.post("/knowledge-base", async (req, res) => {
@@ -2224,6 +2243,91 @@ app.get("/", async (req, res) => {
       margin-bottom: 28px;
     }
 
+    .copilot-shell {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 300px;
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .copilot-chat {
+      display: grid;
+      grid-template-rows: minmax(360px, 1fr) auto;
+      min-height: 560px;
+      overflow: hidden;
+    }
+
+    .copilot-messages {
+      display: grid;
+      align-content: start;
+      gap: 12px;
+      min-height: 0;
+      overflow: auto;
+      padding: 4px 4px 18px;
+    }
+
+    .copilot-message {
+      max-width: 82%;
+      padding: 13px 15px;
+      border-radius: 17px;
+      white-space: pre-wrap;
+      line-height: 1.55;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .copilot-message.is-assistant {
+      justify-self: start;
+      background: rgba(255,255,255,0.075);
+      color: #ecf5ff;
+    }
+
+    .copilot-message.is-user {
+      justify-self: end;
+      background: rgba(0, 153, 255, 0.16);
+      border-color: rgba(0, 153, 255, 0.28);
+      color: #f6fbff;
+    }
+
+    .copilot-form {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: end;
+      padding-top: 14px;
+      border-top: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .copilot-input {
+      min-height: 54px;
+      max-height: 180px;
+      resize: vertical;
+    }
+
+    .copilot-side {
+      display: grid;
+      gap: 12px;
+      align-content: start;
+    }
+
+    .copilot-quick-button {
+      width: 100%;
+      text-align: left;
+      justify-content: flex-start;
+      background: rgba(255,255,255,0.07);
+      color: #dbe8f9;
+      border: 1px solid rgba(255,255,255,0.09);
+    }
+
+    .copilot-note {
+      padding: 14px;
+      border-radius: 16px;
+      background: rgba(0,0,0,0.2);
+      border: 1px solid rgba(255,255,255,0.08);
+      color: #aebcd2;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
     .birthday-workflow {
       display: grid;
       gap: 16px;
@@ -2948,6 +3052,10 @@ app.get("/", async (req, res) => {
       .market-result-row {
         grid-template-columns: 1fr;
       }
+
+      .copilot-shell {
+        grid-template-columns: 1fr;
+      }
     }
 
     @media (max-width: 700px) {
@@ -2988,6 +3096,14 @@ app.get("/", async (req, res) => {
       .form-grid,
       .confirmation-assets {
         grid-template-columns: 1fr;
+      }
+
+      .copilot-form {
+        grid-template-columns: 1fr;
+      }
+
+      .copilot-message {
+        max-width: 100%;
       }
 
       .task-list-head {
@@ -3034,6 +3150,7 @@ app.get("/", async (req, res) => {
       <nav class="side-nav" aria-label="Navigation principale">
         <button class="side-link is-active" type="button" data-target-view="email-management">Gestion des e-mails</button>
         <button class="side-link" type="button" data-target-view="birthday-registration">Enregistrer un anniversaire</button>
+        <button class="side-link" type="button" data-target-view="cosmo-copilot">Cosmo Copilot</button>
         <button class="side-link" type="button" data-target-view="market-watch">Veille marché</button>
         <a class="side-link" href="/phoenix">Phoenix CRM</a>
         <button class="side-link" type="button" data-target-view="knowledge-base">Base métier</button>
@@ -3193,6 +3310,37 @@ app.get("/", async (req, res) => {
           </div>
         </form>
       </section>
+      </section>
+
+      <section class="app-section" data-view="cosmo-copilot">
+      <div class="section-title">
+        <h2>Cosmo Copilot</h2>
+        <span>Assistant interne connecté aux données Cosmo</span>
+      </div>
+
+      <div class="copilot-shell">
+        <section class="settings-panel copilot-chat">
+          <div id="copilotMessages" class="copilot-messages">
+            <div class="copilot-message is-assistant">Bonjour Laurent. Je peux résumer les nouveautés, prioriser les tâches, consulter le contexte Cosmo visible ici et préparer des réponses à valider.</div>
+          </div>
+
+          <form id="copilotForm" class="copilot-form">
+            <textarea id="copilotInput" class="summary-editor copilot-input" placeholder="Ex. Quoi de neuf dans l’entreprise aujourd’hui ?" required></textarea>
+            <button id="copilotSendButton" class="copy-button" type="submit">Envoyer</button>
+          </form>
+        </section>
+
+        <aside class="settings-panel copilot-side">
+          <button class="copy-button copilot-quick-button" type="button" data-copilot-prompt="Quoi de neuf dans l'entreprise ? Résume les e-mails récents, les tâches urgentes, le calendrier et les alertes marché.">Quoi de neuf ?</button>
+          <button class="copy-button copilot-quick-button" type="button" data-copilot-prompt="Quelles sont les priorités à traiter maintenant ? Classe-les par urgence et explique pourquoi.">Priorités</button>
+          <button class="copy-button copilot-quick-button" type="button" data-copilot-prompt="Qu'est-ce qui arrive prochainement dans le calendrier ?">Calendrier</button>
+          <button class="copy-button copilot-quick-button" type="button" data-copilot-prompt="Aide-moi à préparer une réponse au client le plus urgent. N'envoie rien, propose seulement un brouillon à valider.">Préparer une réponse</button>
+
+          <div class="copilot-note">
+            Le Copilot lit le contexte disponible dans Cosmo IA et peut rédiger des brouillons. L’envoi d’e-mails reste volontairement hors de cette version tant que l’humain n’a pas validé.
+          </div>
+        </aside>
+      </div>
       </section>
 
       <section class="app-section" data-view="market-watch">
@@ -4036,9 +4184,109 @@ app.get("/", async (req, res) => {
       }
     }
 
+    const copilotHistory = []
+
+    function appendCopilotMessage(role, content) {
+      const list = document.getElementById("copilotMessages")
+
+      if (!list) return null
+
+      const message = document.createElement("div")
+      message.className = "copilot-message " + (role === "user" ? "is-user" : "is-assistant")
+      message.textContent = content
+      list.appendChild(message)
+      list.scrollTop = list.scrollHeight
+
+      return message
+    }
+
+    async function sendCopilotMessage(promptText) {
+      const input = document.getElementById("copilotInput")
+      const button = document.getElementById("copilotSendButton")
+      const prompt = String(promptText || input?.value || "").trim()
+
+      if (!prompt) return
+
+      appendCopilotMessage("user", prompt)
+      copilotHistory.push({ role: "user", content: prompt })
+
+      if (input) {
+        input.value = ""
+      }
+
+      if (button) {
+        button.disabled = true
+        button.innerText = "Analyse..."
+      }
+
+      const loadingMessage = appendCopilotMessage("assistant", "Je consulte les données Cosmo...")
+
+      try {
+        const response = await fetch("/copilot/chat", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            message: prompt,
+            history: copilotHistory.slice(-8),
+          }),
+        })
+
+        const payload = await response.json()
+
+        if (!payload.success) {
+          throw new Error(payload.error || "Cosmo Copilot indisponible")
+        }
+
+        if (loadingMessage) {
+          loadingMessage.textContent = payload.answer
+        }
+
+        copilotHistory.push({ role: "assistant", content: payload.answer })
+
+        while (copilotHistory.length > 10) {
+          copilotHistory.shift()
+        }
+      } catch (error) {
+        if (loadingMessage) {
+          loadingMessage.textContent = error instanceof Error ? error.message : "Cosmo Copilot indisponible"
+        }
+      } finally {
+        if (button) {
+          button.disabled = false
+          button.innerText = "Envoyer"
+        }
+      }
+    }
+
+    function setupCosmoCopilot() {
+      const form = document.getElementById("copilotForm")
+      const input = document.getElementById("copilotInput")
+
+      form?.addEventListener("submit", (event) => {
+        event.preventDefault()
+        sendCopilotMessage()
+      })
+
+      input?.addEventListener("keydown", (event) => {
+        if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+          event.preventDefault()
+          sendCopilotMessage()
+        }
+      })
+
+      document.querySelectorAll("[data-copilot-prompt]").forEach((button) => {
+        button.addEventListener("click", () => {
+          sendCopilotMessage(button.dataset.copilotPrompt)
+        })
+      })
+    }
+
     setupNavigation()
     setupTaskList()
     setupBirthdayDropzone()
+    setupCosmoCopilot()
     document.getElementById("analyzeBirthdayButton")?.addEventListener("click", analyzeBirthdayReservation)
     document.getElementById("cancelBirthdayButton")?.addEventListener("click", resetBirthdayReservation)
     document.getElementById("copyBirthdayConfirmationButton")?.addEventListener("click", copyBirthdayConfirmation)
